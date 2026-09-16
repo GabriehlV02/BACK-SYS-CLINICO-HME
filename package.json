@@ -1,0 +1,23 @@
+{
+  "name": "back-sys-clinico-hme",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "express": "^4.21.2",
+    "cors": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.2"
+  }
+}
