@@ -30,10 +30,11 @@ type Adquisicion={id:string;numero:string;comprobanteIngreso:string;pedidoId:str
 type CompraEmergencia={id:string;numero:string;productoId:string;nombreTentativo:string;productoProvisional:boolean;almacenId:string;cantidad:number;costoUnitario:number;precioSugerido:number;precioVentaTentativo:number;motivo:string;compradoEn:string;estado:'pendiente'|'regularizada';origenCompra?:string;nitOrigen?:string;numeroFactura?:string;codigoFacturacion?:string;regularizadoEn?:string;creadoPor:string};
 type Imagen = { id: string; titulo: string; categoria: string; paciente:string; descripcion:string; nombreArchivo:string; mime:string; url: string; creadaEn: string };
 type Paciente = { id:string; nombres:string; primerApellido:string; segundoApellido:string; tipoDocumento:string; numeroDocumento:string; fechaNacimiento:string; sexo:'femenino'|'masculino'|'otro'|'no_especifica'; telefono:string; direccion:string; creadoEn:string };
+type Cita = { id:string; pacienteId:string; paciente:string; ci:string; telefono:string; email:string; especialidadId:string; especialidad:string; doctorId:string; doctor:string; fecha:string; hora:string; motivo:string; estado:'por_confirmar'|'confirmada'|'cancelada'; origen:'web'|'recepcion'; pagada:boolean; creadaEn:string };
 type EstudioDicom = { id:string; studyInstanceUid:string; patientIdDicom:string; patientName:string; pacienteId:string|null; accessionNumber:string; descripcion:string; fechaEstudio:string; modalidades:string[]; cantidadSeries:number; actualizadoEn:string };
 type Dispositivo = { id:string; clienteId:string; nombreSistema:string; plataforma:string; navegador:string; ip:string; mac:string|null; nombrePersonalizado:string; primerAcceso:string; ultimoAcceso:string; usuarios:string[]; estado:'activo'|'revocado' };
 type EventoAuditoria = { id:string; tipo:'inicio_sesion'|'cierre_sesion'; usuarioId:string; usuarioNombre:string; dispositivoId:string; ip:string; creadoEn:string; detalle:string };
-type Db = { proveedores: Record<string, unknown>[]; catalogos: Record<string, unknown>[]; pedidos: Record<string, unknown>[]; cotizaciones: Record<string, unknown>[]; adquisiciones:Adquisicion[]; comprasEmergencia:CompraEmergencia[]; usuarios: Usuario[]; roles: Rol[]; tiposProducto: TipoProducto[]; marcasProducto: MarcaProducto[]; almacenes:Almacen[]; areasActivos:AreaActivo[]; ambientesActivos:AmbienteActivo[]; activosFijos:ActivoFijo[]; controlesActivos:ControlActivo[]; documentosActivos:DocumentoActivo[]; existencias:Existencia[]; movimientosAlmacen:MovimientoAlmacen[];transferencias:NotaTraspaso[]; imagenes: Imagen[]; pacientes:Paciente[]; estudiosDicom:EstudioDicom[]; dispositivos:Dispositivo[]; eventosAuditoria:EventoAuditoria[] };
+type Db = { proveedores: Record<string, unknown>[]; catalogos: Record<string, unknown>[]; pedidos: Record<string, unknown>[]; cotizaciones: Record<string, unknown>[]; adquisiciones:Adquisicion[]; comprasEmergencia:CompraEmergencia[]; usuarios: Usuario[]; roles: Rol[]; tiposProducto: TipoProducto[]; marcasProducto: MarcaProducto[]; almacenes:Almacen[]; areasActivos:AreaActivo[]; ambientesActivos:AmbienteActivo[]; activosFijos:ActivoFijo[]; controlesActivos:ControlActivo[]; documentosActivos:DocumentoActivo[]; existencias:Existencia[]; movimientosAlmacen:MovimientoAlmacen[];transferencias:NotaTraspaso[]; imagenes: Imagen[]; pacientes:Paciente[]; citas:Cita[]; estudiosDicom:EstudioDicom[]; dispositivos:Dispositivo[]; eventosAuditoria:EventoAuditoria[] };
 type AuthRequest = Request & { auth?: { userId: string; rolId: string; exp: number; jti: string } };
 
 const app = express();
@@ -50,7 +51,7 @@ if (!isProduction && !process.env.ADMIN_PASSWORD) console.warn('ADVERTENCIA: usa
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataFile = path.join(__dirname, '..', '..', 'data', 'db.json');
-const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5000').split(',').map((item) => item.trim()).filter(Boolean);
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5000,http://localhost:5173,http://localhost:4173').split(',').map((item) => item.trim()).filter(Boolean);
 
 app.disable('x-powered-by');
 app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
@@ -66,7 +67,7 @@ app.use((_req, res, next) => {
 app.use(cors({ origin(origin, callback) { callback(null, !origin || allowedOrigins.includes(origin)); }, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'], maxAge: 600 }));
 app.use(express.json({ limit: '3mb', strict: true }));
 
-function emptyDb(): Db { return { proveedores: [], catalogos: [], pedidos: [], cotizaciones: [], adquisiciones:[], comprasEmergencia:[], usuarios: [], roles: [], tiposProducto: [], marcasProducto: [], almacenes:[], areasActivos:[], ambientesActivos:[], activosFijos:[], controlesActivos:[], documentosActivos:[], existencias:[], movimientosAlmacen:[],transferencias:[], imagenes:[], pacientes:[], estudiosDicom:[], dispositivos:[], eventosAuditoria:[] }; }
+function emptyDb(): Db { return { proveedores: [], catalogos: [], pedidos: [], cotizaciones: [], adquisiciones:[], comprasEmergencia:[], usuarios: [], roles: [], tiposProducto: [], marcasProducto: [], almacenes:[], areasActivos:[], ambientesActivos:[], activosFijos:[], controlesActivos:[], documentosActivos:[], existencias:[], movimientosAlmacen:[],transferencias:[], imagenes:[], pacientes:[], citas:[], estudiosDicom:[], dispositivos:[], eventosAuditoria:[] }; }
 function readDb(): Db {
   fs.mkdirSync(path.dirname(dataFile), { recursive: true });
   if (!fs.existsSync(dataFile)) writeDb(emptyDb());
@@ -83,7 +84,7 @@ function readDb(): Db {
   const usuarios=(parsed.usuarios||[]).map(usuario=>usuario.rolId==='rol-administrador'?{...usuario,todosAlmacenes:true,accesosAlmacenes:[]}:{...usuario,todosAlmacenes:Boolean(usuario.todosAlmacenes),accesosAlmacenes:Array.isArray(usuario.accesosAlmacenes)?usuario.accesosAlmacenes:[]});
   const pacientes=(parsed.pacientes||[]).map((p:any):Paciente=>({id:p.id,nombres:p.nombres||p.nombre||'',primerApellido:p.primerApellido||p.apellido||'',segundoApellido:p.segundoApellido||'',tipoDocumento:p.tipoDocumento||'CI',numeroDocumento:p.numeroDocumento||p.ci||'',fechaNacimiento:p.fechaNacimiento||'',sexo:p.sexo||'no_especifica',telefono:p.telefono||'',direccion:p.direccion||'',creadoEn:p.creadoEn||new Date().toISOString()}));
   const imagenes=(parsed.imagenes||[]).map((i:any):Imagen=>({...i,paciente:i.paciente||'Paciente sin registrar',descripcion:i.descripcion||'',nombreArchivo:i.nombreArchivo||i.titulo||'estudio',mime:i.mime||'image/jpeg'}));
-  return { proveedores: parsed.proveedores || [], catalogos, pedidos: parsed.pedidos || [], cotizaciones: parsed.cotizaciones || [], adquisiciones:parsed.adquisiciones||[], comprasEmergencia:parsed.comprasEmergencia||[], usuarios, roles, tiposProducto: [...tiposGuardados, ...tiposHeredados], marcasProducto: [...marcasGuardadas, ...marcasHeredadas], almacenes:parsed.almacenes||[], areasActivos:parsed.areasActivos||[], ambientesActivos:parsed.ambientesActivos||[], activosFijos:parsed.activosFijos||[], controlesActivos:parsed.controlesActivos||[], documentosActivos:parsed.documentosActivos||[], existencias:parsed.existencias||[], movimientosAlmacen:parsed.movimientosAlmacen||[],transferencias:parsed.transferencias||[], imagenes, pacientes, estudiosDicom:parsed.estudiosDicom||[], dispositivos:parsed.dispositivos||[], eventosAuditoria:parsed.eventosAuditoria||[] };
+  return { proveedores: parsed.proveedores || [], catalogos, pedidos: parsed.pedidos || [], cotizaciones: parsed.cotizaciones || [], adquisiciones:parsed.adquisiciones||[], comprasEmergencia:parsed.comprasEmergencia||[], usuarios, roles, tiposProducto: [...tiposGuardados, ...tiposHeredados], marcasProducto: [...marcasGuardadas, ...marcasHeredadas], almacenes:parsed.almacenes||[], areasActivos:parsed.areasActivos||[], ambientesActivos:parsed.ambientesActivos||[], activosFijos:parsed.activosFijos||[], controlesActivos:parsed.controlesActivos||[], documentosActivos:parsed.documentosActivos||[], existencias:parsed.existencias||[], movimientosAlmacen:parsed.movimientosAlmacen||[],transferencias:parsed.transferencias||[], imagenes, pacientes, citas:parsed.citas||[], estudiosDicom:parsed.estudiosDicom||[], dispositivos:parsed.dispositivos||[], eventosAuditoria:parsed.eventosAuditoria||[] };
 }
 function writeDb(data: Db) {
   const temporary = `${dataFile}.${process.pid}.tmp`;
@@ -253,7 +254,40 @@ async function sincronizarOrthanc(){
   writeDb(db);return{total:recursos.length,nuevos,actualizados,asignados,pendientes:db.estudiosDicom.filter(item=>!item.pacienteId).length};
 }
 
+const agendaEspecialidades = [
+  { id:'medicina-general', nombre:'Medicina general', doctores:['valeria-rojas','mauricio-vargas'] },
+  { id:'medicina-interna', nombre:'Medicina interna', doctores:['valeria-rojas','elena-salazar'] },
+  { id:'pediatria', nombre:'Pediatría', doctores:['elena-salazar','mauricio-vargas'] },
+  { id:'cardiologia', nombre:'Cardiología', doctores:['valeria-rojas'] },
+];
+const agendaDoctores = [
+  { id:'valeria-rojas', nombre:'Dra. Valeria Rojas' },
+  { id:'mauricio-vargas', nombre:'Dr. Mauricio Vargas' },
+  { id:'elena-salazar', nombre:'Dra. Elena Salazar' },
+];
+const agendaHoras = Array.from({length:20},(_,index)=>`${String(7+Math.floor(index/2)).padStart(2,'0')}:${index%2?'30':'00'}`);
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/api/public/citas/configuracion', (_req,res) => res.json({ especialidades:agendaEspecialidades.map(item=>({...item,doctores:item.doctores.map(id=>agendaDoctores.find(doctor=>doctor.id===id))})), doctores:agendaDoctores, horas:agendaHoras }));
+app.get('/api/public/citas/disponibilidad', (req,res) => {
+  const fecha=text(req.query.fecha,10),doctorId=text(req.query.doctorId,80);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)||!agendaDoctores.some(item=>item.id===doctorId))return res.status(400).json({message:'Fecha y doctor válidos son obligatorios.'});
+  const ocupadas=new Set(readDb().citas.filter(item=>item.fecha===fecha&&item.doctorId===doctorId&&item.estado!=='cancelada').map(item=>item.hora));
+  res.json({fecha,doctorId,horas:agendaHoras.map(hora=>({hora,disponible:!ocupadas.has(hora)}))});
+});
+app.post('/api/public/citas', (req,res) => {
+  const pacienteNombre=text(req.body?.paciente?.nombre,160),ci=text(req.body?.paciente?.ci,40),telefono=text(req.body?.paciente?.telefono,30),email=text(req.body?.paciente?.email,254).toLowerCase();
+  const especialidadId=text(req.body?.especialidadId,80),doctorId=text(req.body?.doctorId,80),fecha=text(req.body?.fecha,10),hora=text(req.body?.hora,5),motivo=text(req.body?.motivo,500);
+  const especialidad=agendaEspecialidades.find(item=>item.id===especialidadId),doctor=agendaDoctores.find(item=>item.id===doctorId);
+  if(!pacienteNombre||!ci||!telefono||!/^\S+@\S+\.\S+$/.test(email)||!especialidad||!doctor||!especialidad.doctores.includes(doctorId)||!/^\d{4}-\d{2}-\d{2}$/.test(fecha)||!agendaHoras.includes(hora))return res.status(400).json({message:'Completa correctamente paciente, especialidad, doctor, fecha y hora.'});
+  const fechaSolicitada=new Date(`${fecha}T23:59:59`);if(Number.isNaN(fechaSolicitada.getTime())||fechaSolicitada.getTime()<Date.now())return res.status(400).json({message:'La fecha de la cita no puede estar en el pasado.'});
+  const db=readDb();if(db.citas.some(item=>item.fecha===fecha&&item.hora===hora&&item.doctorId===doctorId&&item.estado!=='cancelada'))return res.status(409).json({message:'Ese horario acaba de ser reservado. Selecciona otro disponible.'});
+  let paciente=db.pacientes.find(item=>item.numeroDocumento.toLowerCase()===ci.toLowerCase());
+  if(!paciente){const partes=pacienteNombre.split(/\s+/);paciente={id:randomUUID(),nombres:partes[0]||pacienteNombre,primerApellido:partes[1]||'',segundoApellido:partes.slice(2).join(' '),tipoDocumento:'CI',numeroDocumento:ci,fechaNacimiento:'',sexo:'no_especifica',telefono,direccion:'',creadoEn:new Date().toISOString()};db.pacientes.unshift(paciente);}else if(telefono&&!paciente.telefono)paciente.telefono=telefono;
+  const cita:Cita={id:randomUUID(),pacienteId:paciente.id,paciente:pacienteNombre,ci,telefono,email,especialidadId,especialidad:especialidad.nombre,doctorId,doctor:doctor.nombre,fecha,hora,motivo,estado:'por_confirmar',origen:'web',pagada:false,creadaEn:new Date().toISOString()};db.citas.unshift(cita);writeDb(db);res.status(201).json({id:cita.id,estado:cita.estado,message:'Tu cita fue reservada y está pendiente de confirmación y pago en recepción.'});
+});
+app.get('/api/citas', authenticate, (_req,res) => res.json(readDb().citas));
+app.patch('/api/citas/:id/estado', authenticate, (req,res) => {const estado=req.body?.estado as Cita['estado'];if(!['por_confirmar','confirmada','cancelada'].includes(estado))return res.status(400).json({message:'Estado de cita inválido.'});const db=readDb(),cita=db.citas.find(item=>item.id===String(req.params.id));if(!cita)return res.status(404).json({message:'Cita no encontrada.'});cita.estado=estado;cita.pagada=estado==='confirmada';writeDb(db);res.json(cita);});
 app.post('/api/login', loginRateLimit, (req, res) => {
   const username = text(req.body?.usuario, 254).toLowerCase(); const password = typeof req.body?.password === 'string' ? req.body.password : '';
   if (!username || !password || password.length > 200) return res.status(400).json({ message: 'Usuario y contraseña son obligatorios.' });
