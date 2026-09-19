@@ -509,6 +509,17 @@ app.put('/api/usuarios/:id', authorize('usuarios.acceder'), authorize('usuarios.
   if(indice<0&&id==='admin-bootstrap'){db.usuarios.push({id,nombre,apellido,email,ci,telefono,usuario:'admin',rolId:'rol-administrador',estado,passwordHash:hashPassword('admin'),creadoEn:new Date().toISOString(),todosAlmacenes:true,accesosAlmacenes:[]});indice=db.usuarios.length-1}else if(indice<0)return res.status(404).json({message:'Usuario no encontrado.'});else db.usuarios[indice]={...db.usuarios[indice],nombre,apellido,email,ci,telefono,estado};
   writeDb(db);const {passwordHash:_secret,...seguro}=db.usuarios[indice];res.json(seguro);
 });
+app.delete('/api/usuarios/:id', authorize('usuarios.acceder'), authorize('usuarios.editar'), (req:AuthRequest, res) => {
+  const id = String(req.params.id);
+  if (id === 'admin-bootstrap') return res.status(409).json({ message: 'La cuenta administrativa de respaldo no se puede eliminar.' });
+  if (id === req.auth?.userId) return res.status(409).json({ message: 'No puedes eliminar tu propia cuenta.' });
+  const db = readDb();
+  const index = db.usuarios.findIndex((usuario) => usuario.id === id);
+  if (index < 0) return res.status(404).json({ message: 'Usuario no encontrado.' });
+  db.usuarios.splice(index, 1);
+  writeDb(db);
+  res.status(204).end();
+});
 app.get('/api/roles', authorize('usuarios.acceder'), authorize('usuarios.ver', 'usuarios.listado', 'usuarios.editar', 'usuarios.crear', 'usuarios.roles'), (_req, res) => res.json(readDb().roles));
 app.post('/api/roles', authorize('usuarios.acceder'), authorize('usuarios.editar', 'usuarios.roles'), (req, res) => { const nombre = text(req.body?.nombre); const descripcion = text(req.body?.descripcion, 500); const permisos = stringArray(req.body?.permisos);const tipos:TipoInicio[]=['ventas','administracion','almacenes','admin_sistema','atencion_clinica'];const tipoInicio=tipos.includes(req.body?.tipoInicio)?req.body.tipoInicio:'ventas'; if (!nombre) return res.status(400).json({ message: 'El nombre del rol es obligatorio.' }); const db = readDb(); if (db.roles.some((role) => role.nombre.toLowerCase() === nombre.toLowerCase())) return res.status(409).json({ message: 'Ya existe un rol con ese nombre.' }); const role = { id: randomUUID(), nombre, descripcion, permisos,tipoInicio }; db.roles.push(role); writeDb(db); res.status(201).json(role); });
 app.put('/api/roles/:id', authorize('usuarios.acceder'), authorize('usuarios.editar', 'usuarios.roles'), (req, res) => { const id = String(req.params.id); const db = readDb(); const index = db.roles.findIndex((role) => role.id === id); if (index < 0) return res.status(404).json({ message: 'Rol no encontrado.' }); const nombre = text(req.body?.nombre) || db.roles[index].nombre; if (db.roles.some((role, i) => i !== index && role.nombre.toLowerCase() === nombre.toLowerCase())) return res.status(409).json({ message: 'Ya existe un rol con ese nombre.' });const tipos:TipoInicio[]=['ventas','administracion','almacenes','admin_sistema','atencion_clinica'];const tipoInicio=id==='rol-administrador'?'admin_sistema':tipos.includes(req.body?.tipoInicio)?req.body.tipoInicio:'ventas'; db.roles[index] = { ...db.roles[index], nombre, descripcion: text(req.body?.descripcion, 500), permisos: stringArray(req.body?.permisos),tipoInicio, id }; writeDb(db); res.json(db.roles[index]); });
