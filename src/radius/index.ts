@@ -34,7 +34,7 @@ type Paciente = { id:string; nombres:string; primerApellido:string; segundoApell
 type Cita = { id:string; pacienteId:string; paciente:string; ci:string; telefono:string; email:string; especialidadId:string; especialidad:string; doctorId:string; doctor:string; fecha:string; hora:string; motivo:string; estado:'por_confirmar'|'confirmada'|'cancelada'; origen:'web'|'recepcion'; pagada:boolean; creadaEn:string };
 type EstudioDicom = { id:string; studyInstanceUid:string; patientIdDicom:string; patientName:string; pacienteId:string|null; accessionNumber:string; descripcion:string; fechaEstudio:string; modalidades:string[]; cantidadSeries:number; actualizadoEn:string };
 type Dispositivo = { id:string; clienteId:string; nombreSistema:string; plataforma:string; navegador:string; ip:string; mac:string|null; nombrePersonalizado:string; primerAcceso:string; ultimoAcceso:string; usuarios:string[]; estado:'activo'|'revocado' };
-type EventoAuditoria = { id:string; tipo:'inicio_sesion'|'cierre_sesion'; usuarioId:string; usuarioNombre:string; dispositivoId:string; ip:string; creadoEn:string; detalle:string };
+type EventoAuditoria = { id:string; tipo:'inicio_sesion'|'cierre_sesion'|'perfil_actualizado'|'contrasena_actualizada'; usuarioId:string; usuarioNombre:string; dispositivoId:string; ip:string; creadoEn:string; detalle:string };
 type Db = { proveedores: Record<string, unknown>[]; catalogos: Record<string, unknown>[]; pedidos: Record<string, unknown>[]; cotizaciones: Record<string, unknown>[]; adquisiciones:Adquisicion[]; comprasEmergencia:CompraEmergencia[]; usuarios: Usuario[]; roles: Rol[]; tiposProducto: TipoProducto[]; marcasProducto: MarcaProducto[]; almacenes:Almacen[]; areasActivos:AreaActivo[]; ambientesActivos:AmbienteActivo[]; activosFijos:ActivoFijo[]; controlesActivos:ControlActivo[]; documentosActivos:DocumentoActivo[]; existencias:Existencia[]; movimientosAlmacen:MovimientoAlmacen[];transferencias:NotaTraspaso[]; imagenes: Imagen[]; pacientes:Paciente[]; citas:Cita[]; estudiosDicom:EstudioDicom[]; dispositivos:Dispositivo[]; eventosAuditoria:EventoAuditoria[] };
 type AuthRequest = Request & { auth?: { userId: string; rolId: string; exp: number; jti: string } };
 
@@ -379,13 +379,17 @@ app.get('/api/mi-perfil', (req: AuthRequest, res) => {
   if(!usuario)return res.status(404).json({message:'Perfil no encontrado.'});
   const {passwordHash:_password,...perfil}=usuario;res.json(perfil);
 });
+app.get('/api/mi-actividad', (req: AuthRequest, res) => {
+  const eventos=readDb().eventosAuditoria.filter(evento=>evento.usuarioId===req.auth?.userId).slice(0,50);
+  res.json({ eventos });
+});
 app.put('/api/mi-perfil', (req: AuthRequest, res) => {
   const db=readDb();const indice=db.usuarios.findIndex(item=>item.id===req.auth?.userId);
   if(indice<0)return res.status(404).json({message:'Perfil no encontrado.'});
   const nombre=db.usuarios[indice].nombre,apellido=db.usuarios[indice].apellido,email=text(req.body?.email,254).toLowerCase(),usuario=text(req.body?.usuario,60).toLowerCase(),ci=db.usuarios[indice].ci||'',telefono=text(req.body?.telefono,30),password=typeof req.body?.password==='string'?req.body.password:'';
   if(!nombre||!apellido||!email||!usuario||!ci||!telefono||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^[a-z0-9._-]{3,60}$/i.test(usuario))return res.status(400).json({message:'Nombre, apellido, usuario, correo, teléfono y CI son obligatorios.'});
   const otros=db.usuarios.filter((_,i)=>i!==indice);if(otros.some(item=>item.usuario?.toLowerCase()===usuario))return res.status(409).json({message:'El nombre de usuario ya está registrado.'});if(otros.some(item=>item.email.toLowerCase()===email))return res.status(409).json({message:'El correo electrónico ya está registrado.'});if(otros.some(item=>item.ci?.toLowerCase()===ci))return res.status(409).json({message:'La cédula de identidad ya está registrada.'});const telefonoComparable=telefono.replace(/\D/g,'');if(otros.some(item=>item.telefono.replace(/\D/g,'')===telefonoComparable))return res.status(409).json({message:'El teléfono ya está registrado.'});if(password&&password.length<minimumUserPasswordLength)return res.status(400).json({message:`La contraseña debe tener ${minimumUserPasswordLength} carácter${minimumUserPasswordLength===1?'':'es'} como mínimo.`});
-  db.usuarios[indice]={...db.usuarios[indice],nombre,apellido,email,usuario,ci,telefono,...(password?{passwordHash:hashPassword(password)}:{})};writeDb(db);const {passwordHash:_password,...perfil}=db.usuarios[indice];res.json(perfil);
+  db.usuarios[indice]={...db.usuarios[indice],nombre,apellido,email,usuario,ci,telefono,...(password?{passwordHash:hashPassword(password)}:{})};const ahora=new Date().toISOString(),usuarioNombre=`${nombre} ${apellido}`.trim();db.eventosAuditoria.unshift({id:randomUUID(),tipo:password?'contrasena_actualizada':'perfil_actualizado',usuarioId:db.usuarios[indice].id,usuarioNombre,dispositivoId:req.auth?.jti||'sesion-actual',ip:ipCliente(req),creadoEn:ahora,detalle:password?'Actualizó la contraseña de su cuenta.':'Actualizó los datos de su perfil.'});db.eventosAuditoria=db.eventosAuditoria.slice(0,1000);writeDb(db);const {passwordHash:_password,...perfil}=db.usuarios[indice];res.json(perfil);
 });
 app.post('/api/verificar-acceso-usuarios', loginRateLimit, authorize('usuarios.acceder'), (req: AuthRequest, res) => {
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
