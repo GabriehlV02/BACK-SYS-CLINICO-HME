@@ -3,6 +3,7 @@ dist/
 .turbo/
 .env
 data/db.json
+data/emergencias.json
 data/*.tmp
 npm-debug.log*
 pnpm-debug.log*

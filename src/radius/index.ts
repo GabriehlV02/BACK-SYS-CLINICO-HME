@@ -1,5 +1,6 @@
 type PerfilAtencion = 'medico'|'consultorio'|'internacion'|'quirofano'|'imagenologia'|'anestesiologo';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { rutasEmergencias } from '../emergencias.js';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
@@ -372,6 +373,7 @@ app.post('/api/imagenes', authenticate, (req, res) => {
 });
 
 app.use('/api', authenticate);
+app.use('/api/emergencias', rutasEmergencias(path.join(path.dirname(dataFile), 'emergencias.json')));
 app.get('/api/sesion', (req: AuthRequest, res) => res.json({ ok: true, expiresAt: req.auth!.exp }));
 app.post('/api/logout', (req: AuthRequest, res) => { revokedTokens.set(req.auth!.jti, req.auth!.exp); for (const [jti, exp] of revokedTokens) if (exp <= Date.now()) revokedTokens.delete(jti); res.status(204).end(); });
 app.get('/api/mi-perfil', (req: AuthRequest, res) => {
