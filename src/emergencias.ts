@@ -13,6 +13,12 @@ type Orden = { id: string; revision: number; fecha: string; usuario: string; tip
 type Cuenta = { id: string; solicitudId: string; cubiculo: string; inicio: string; fin: string | null; creadoPor: string; revision: number; identidad: Identidad | null; signos: Signos[]; consumos: Consumo[]; evaluaciones: Evaluacion[]; ordenes: Orden[] };
 const limpiar = (v: unknown, max = 200) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 function exigir(ok: unknown, message: string, status = 400): asserts ok { if (!ok) throw Object.assign(new Error(message), { status }); }
+function leerIdentidad(datos: Record<string, unknown> = {}): Identidad | null {
+  const identidad = Object.fromEntries(['nombres', 'apellidos', 'documento', 'nacimiento', 'telefono', 'direccion', 'familiar', 'parentesco', 'telefonoFamiliar', 'documentoFamiliar'].map(k => [k, limpiar(datos?.[k])])) as Identidad;
+  const nacimiento = identidad.nacimiento;
+  exigir(!nacimiento || (/^\d{4}-\d{2}-\d{2}$/.test(nacimiento) && Number.isFinite(Date.parse(nacimiento)) && new Date(nacimiento).toISOString().slice(0, 10) === nacimiento && nacimiento <= new Date().toISOString().slice(0, 10)), 'Fecha de nacimiento inválida.');
+  return Object.values(identidad).some(Boolean) ? identidad : null;
+}
 export const importeConsumo = (c: Consumo, ahora = Date.now()) => Math.round(c.precio * (c.porHora ? Math.max(0, (c.fin ? Date.parse(c.fin) : ahora) - Date.parse(c.inicio)) / 3_600_000 : c.cantidad) * 100) / 100;
 
 export async function catalogoContable(): Promise<Item[]> {
@@ -39,7 +45,7 @@ export function rutasEmergencias(archivo: string, catalogo = catalogoContable) {
     const anterior = cuentas.find(c => c.solicitudId === solicitudId);
     if (anterior) return res.json(presentar(anterior));
     exigir(!cuentas.some(c => !c.fin && c.cubiculo === cubiculo), 'Este cubículo ya tiene una atención activa.', 409);
-    const cuenta: Cuenta = { id: randomUUID(), solicitudId, cubiculo, inicio: new Date().toISOString(), fin: null, creadoPor: (req as any).auth?.userId || '', revision: 0, identidad: null, signos: [], consumos: [], evaluaciones: [], ordenes: [] };
+    const cuenta: Cuenta = { id: randomUUID(), solicitudId, cubiculo, inicio: new Date().toISOString(), fin: null, creadoPor: (req as any).auth?.userId || '', revision: 0, identidad: leerIdentidad(req.body?.identidad), signos: [], consumos: [], evaluaciones: [], ordenes: [] };
     cuentas.unshift(cuenta); guardar(cuentas); res.status(201).json(presentar(cuenta));
   });
   router.post('/:id/:accion', (req, res, next) => { void (async () => {
@@ -51,9 +57,8 @@ export function rutasEmergencias(archivo: string, catalogo = catalogoContable) {
     const body = req.body || {}, ahora = new Date().toISOString(), usuario = (req as any).auth?.userId || '';
     if (accion === 'identidad') {
       exigir(body.revision === cuenta.revision, 'La cuenta cambió. Actualiza y vuelve a guardar los datos.', 409);
-      const identidad = Object.fromEntries(['nombres', 'apellidos', 'documento', 'nacimiento', 'telefono', 'direccion', 'familiar', 'parentesco', 'telefonoFamiliar', 'documentoFamiliar'].map(k => [k, limpiar(body[k])])) as Identidad;
-      exigir(Object.values(identidad).some(Boolean), 'Anota al menos un dato conocido del paciente o acompañante.');
-      exigir(!identidad.nacimiento || (/^\d{4}-\d{2}-\d{2}$/.test(identidad.nacimiento) && Number.isFinite(Date.parse(identidad.nacimiento)) && identidad.nacimiento <= ahora.slice(0, 10)), 'Fecha de nacimiento inválida.');
+      const identidad = leerIdentidad(body);
+      exigir(identidad, 'Anota al menos un dato conocido del paciente o acompañante.');
       cuenta.identidad = identidad;
     } else {
       exigir(!cuenta.fin, 'La atención ya finalizó.', 409);

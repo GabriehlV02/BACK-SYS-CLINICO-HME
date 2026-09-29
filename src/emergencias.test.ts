@@ -57,6 +57,13 @@ test('atención anónima, signos, consumos, identificación, persistencia y libe
     const nueva = await llamar('/emergencias', { cubiculo: '3', solicitudId: 'crear-3' }, 201);
     assert.notEqual(nueva.id, inicial.id); assert.equal(nueva.consumos.length, 0);
     assert.equal((await llamar('/reinicio')).cuentas.length, 2);
+    await llamar('/emergencias', { solicitudId: 'sin-cubiculo', identidad: { nombres: 'Prueba' } }, 400);
+    await llamar('/emergencias', { cubiculo: '4', solicitudId: 'fecha-invalida', identidad: { nacimiento: '2025-02-30' } }, 400);
+    const parcial = await llamar('/emergencias', { cubiculo: '4', solicitudId: 'con-datos', identidad: { nombres: '  Prueba  ', telefono: '123' } }, 201);
+    assert.equal(parcial.identidad.nombres, 'Prueba'); assert.equal(parcial.identidad.apellidos, '');
+    assert.equal((await llamar('/reinicio')).cuentas.find((c: any) => c.id === parcial.id).identidad.telefono, '123');
+    const sinDatos = await llamar('/emergencias', { cubiculo: '5', solicitudId: 'vacios', identidad: { nombres: '  ', documento: '' } }, 201);
+    assert.equal(sinDatos.identidad, null);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     // Solo el directorio temporal creado por esta prueba.
