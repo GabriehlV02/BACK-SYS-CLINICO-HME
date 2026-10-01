@@ -327,6 +327,16 @@ app.patch('/api/auditorias/dispositivos/:id', authenticate, soloAdministradorAud
 });
 
 app.get('/api/imagenes', authenticate, (_req, res) => res.json(readDb().imagenes || []));
+app.get('/api/integraciones/imagenologia/pacientes', (req, res) => {
+  const clave = process.env.ESTUDIOS_INTEGRATION_KEY || 'hospital-estudios-local';
+  if (req.header('x-integracion-estudios') !== clave) return res.status(403).json({ message: 'Integración no autorizada.' });
+  const db = readDb();
+  res.json(db.pacientes.map((paciente) => ({
+    ...paciente,
+    estudios: db.estudiosDicom.filter((estudio) => estudio.pacienteId === paciente.id),
+    historias: [],
+  })));
+});
 app.get('/api/pacientes', authenticate, (_req, res) => res.json(readDb().pacientes));
 app.post('/api/pacientes', authenticate, (req, res) => {
   const nombres=text(req.body?.nombres),primerApellido=text(req.body?.primerApellido),segundoApellido=text(req.body?.segundoApellido),tipoDocumento=text(req.body?.tipoDocumento,40),numeroDocumento=text(req.body?.numeroDocumento,40),fechaNacimiento=text(req.body?.fechaNacimiento,20),telefono=text(req.body?.telefono,30),direccion=text(req.body?.direccion,300);const sexos:Paciente['sexo'][]=['femenino','masculino','otro','no_especifica'];const sexo:Paciente['sexo']=sexos.includes(req.body?.sexo)?req.body.sexo:'no_especifica';
