@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-type Item = { id: string; codigo: string; nombre: string; tipo: 'servicio' | 'producto'; unidad: string; precio: number };
+type Item = { id: string; codigo: string; nombre: string; tipo: 'servicio' | 'producto'; unidad: string; precio: number; categoria?: string; grupo?: string };
 type Consumo = Item & { registroId: string; cantidad: number; porHora: boolean; inicio: string; fin: string | null; usuario: string; ordenId?: string };
 type Signos = { id: string; fecha: string; usuario: string; valores: Record<string, number>; observacion: string };
 type Identidad = { nombres: string; apellidos: string; documento: string; nacimiento: string; telefono: string; direccion: string; familiar: string; parentesco: string; telefonoFamiliar: string; documentoFamiliar: string };
@@ -27,7 +27,7 @@ export async function catalogoContable(): Promise<Item[]> {
   const datos = await respuesta.json() as { data: Record<string, unknown>[] };
   exigir(Array.isArray(datos.data), 'El catálogo contable no es válido.', 503);
   return datos.data.filter(i => String(i.estado).toUpperCase() === 'ACTIVO' && !i.revisionPrecio && Number.isFinite(i.precioVenta) && Number(i.precioVenta) >= 0).map(i => ({
-    id: String(i.id), codigo: String(i.codigo), nombre: String(i.nombre), tipo: String(i.tipo).toUpperCase() === 'SERVICIO' ? 'servicio' : 'producto', unidad: String(i.unidadMedida), precio: Number(i.precioVenta),
+    id: String(i.id), codigo: String(i.codigo), nombre: String(i.nombre), tipo: String(i.tipo).toUpperCase() === 'SERVICIO' ? 'servicio' : 'producto', unidad: String(i.unidadMedida), precio: Number(i.precioVenta), categoria: String(i.categoria || ''), grupo: String(i.grupo || ''),
   }));
 }
 

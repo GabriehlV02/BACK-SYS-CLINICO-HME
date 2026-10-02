@@ -1,4 +1,4 @@
-type PerfilAtencion = 'medico'|'consultorio'|'internacion'|'quirofano'|'imagenologia'|'anestesiologo';
+type PerfilAtencion = 'medico'|'enfermera'|'consultorio'|'internacion'|'quirofano'|'imagenologia'|'anestesiologo';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { rutasEmergencias } from '../emergencias.js';
 import cors from 'cors';
@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 5005);
 const isProduction = process.env.NODE_ENV === 'production';
 const tokenSecret = process.env.AUTH_SECRET || (isProduction ? '' : 'solo-desarrollo-cambiar-esta-clave');
 const adminPassword = process.env.ADMIN_PASSWORD || (!isProduction ? 'admin' : '');
-const minimumUserPasswordLength: number = 8;
+const minimumUserPasswordLength: number = 6;
 const sessionDurationMs = 6 * 60 * 60_000;
 
 if (!tokenSecret || tokenSecret.length < 32) throw new Error('AUTH_SECRET debe tener al menos 32 caracteres.');
