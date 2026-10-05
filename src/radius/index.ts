@@ -338,6 +338,36 @@ app.get('/api/integraciones/imagenologia/pacientes', (req, res) => {
   })));
 });
 app.get('/api/pacientes', authenticate, (_req, res) => res.json(readDb().pacientes));
+// Punto único de alta para Recepción, Emergencias y los demás flujos clínicos.
+// El documento identifica de forma estable a la persona y evita duplicados.
+app.post('/api/pacientes/sincronizar', authenticate, (req, res) => {
+  const nombres = text(req.body?.nombres, 120);
+  const apellidos = text(req.body?.apellidos, 160);
+  const [primerApellido = '', ...restoApellidos] = apellidos.split(/\s+/).filter(Boolean);
+  const segundoApellido = text(req.body?.segundoApellido || restoApellidos.join(' '), 120);
+  const numeroDocumento = text(req.body?.numeroDocumento || req.body?.documento, 40);
+  if (!nombres || !numeroDocumento) return res.status(400).json({ message: 'Para crear o vincular una ficha se requieren nombres y documento.' });
+  const db = readDb();
+  const existente = db.pacientes.find((item) => item.numeroDocumento.toLocaleLowerCase() === numeroDocumento.toLocaleLowerCase());
+  const datos = {
+    nombres,
+    primerApellido: text(req.body?.primerApellido || primerApellido, 120),
+    segundoApellido,
+    tipoDocumento: text(req.body?.tipoDocumento, 40) || 'CI',
+    numeroDocumento,
+    fechaNacimiento: text(req.body?.fechaNacimiento || req.body?.nacimiento, 20),
+    telefono: text(req.body?.telefono, 30),
+    direccion: text(req.body?.direccion, 300),
+  };
+  if (existente) {
+    for (const [campo, valor] of Object.entries(datos)) if (valor) (existente as any)[campo] = valor;
+    writeDb(db);
+    return res.json({ paciente: existente, creado: false });
+  }
+  const paciente: Paciente = { id: randomUUID(), ...datos, sexo: 'no_especifica', creadoEn: new Date().toISOString() };
+  db.pacientes.unshift(paciente); writeDb(db);
+  res.status(201).json({ paciente, creado: true });
+});
 app.post('/api/pacientes', authenticate, (req, res) => {
   const nombres=text(req.body?.nombres),primerApellido=text(req.body?.primerApellido),segundoApellido=text(req.body?.segundoApellido),tipoDocumento=text(req.body?.tipoDocumento,40),numeroDocumento=text(req.body?.numeroDocumento,40),fechaNacimiento=text(req.body?.fechaNacimiento,20),telefono=text(req.body?.telefono,30),direccion=text(req.body?.direccion,300);const sexos:Paciente['sexo'][]=['femenino','masculino','otro','no_especifica'];const sexo:Paciente['sexo']=sexos.includes(req.body?.sexo)?req.body.sexo:'no_especifica';
   if(!nombres||!primerApellido||!segundoApellido||!tipoDocumento||!numeroDocumento||!fechaNacimiento||!telefono||!direccion)return res.status(400).json({message:'Completa todos los datos obligatorios del paciente.'});
