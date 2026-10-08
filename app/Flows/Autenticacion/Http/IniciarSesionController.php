@@ -25,7 +25,7 @@ class IniciarSesionController
         return response()->json([
             'token' => Str::random(64),
             'expiresAt' => now()->addHours(8)->getTimestampMs(),
-            'usuario' => ['nombre' => trim("{$usuario->nombres} {$usuario->apellidos}"), 'rol' => $roles->first() ?? 'Sin rol', 'permisos' => $permisos, 'tipoInicio' => 'admin_sistema'],
+            'usuario' => ['id' => $usuario->id, 'usuario' => $usuario->usuario, 'nombre' => trim("{$usuario->nombres} {$usuario->apellidos}"), 'apellidos' => $usuario->apellidos, 'correo' => $usuario->correo, 'ci' => $usuario->ci, 'telefono' => $usuario->telefono, 'rol' => $roles->first() ?? 'Sin rol', 'permisos' => $permisos, 'tipoInicio' => 'admin_sistema'],
         ]);
     }
 }
