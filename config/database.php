@@ -99,6 +99,20 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        'usuarios' => [
+            'driver' => 'pgsql',
+            'host' => env('USUARIOS_DB_HOST', '127.0.0.1'),
+            'port' => env('USUARIOS_DB_PORT', '5432'),
+            'database' => env('USUARIOS_DB_DATABASE', 'bd_usuarios'),
+            'username' => env('USUARIOS_DB_USERNAME', 'hospital_app'),
+            'password' => env('USUARIOS_DB_PASSWORD', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('USUARIOS_DB_SSLMODE', 'prefer'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
