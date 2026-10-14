@@ -33,4 +33,9 @@ class Paciente extends Model
     {
         return $this->hasMany(RegistroAdmisionPaciente::class);
     }
+
+    public function responsables(): HasMany
+    {
+        return $this->hasMany(PacienteResponsable::class);
+    }
 }
