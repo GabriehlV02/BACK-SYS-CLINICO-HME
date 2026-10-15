@@ -31,6 +31,7 @@ class RegistrarPacienteRequest extends FormRequest
             'zona_barrio' => ['nullable', 'string', 'max:150'],
             'direccion_domicilio' => ['nullable', 'string', 'max:255'],
             'responsable_nombre_completo' => ['nullable', 'string', 'max:180'],
+            'responsable_ci' => ['nullable', 'string', 'min:3', 'max:25'],
             'responsable_telefono' => ['nullable', 'string', 'max:30'],
             'responsable_parentesco' => ['nullable', 'string', 'max:80'],
             'como_se_entero' => ['required', 'string', 'max:100'],

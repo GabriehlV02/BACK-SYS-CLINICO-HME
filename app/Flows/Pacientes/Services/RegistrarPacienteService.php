@@ -15,10 +15,11 @@ class RegistrarPacienteService
             $datos['afroamericano'] = $datos['afroamericano'] ?? false;
             $responsable = [
                 'nombre_completo' => $datos['responsable_nombre_completo'] ?? null,
+                'ci' => isset($datos['responsable_ci']) ? trim($datos['responsable_ci']) : null,
                 'telefono' => $datos['responsable_telefono'] ?? null,
                 'parentesco' => $datos['responsable_parentesco'] ?? null,
             ];
-            $paciente = Paciente::query()->create(\Illuminate\Support\Arr::except($datos, ['como_se_entero', 'observaciones', 'habilitado', 'responsable_nombre_completo', 'responsable_telefono', 'responsable_parentesco']));
+            $paciente = Paciente::query()->create(\Illuminate\Support\Arr::except($datos, ['como_se_entero', 'observaciones', 'habilitado', 'responsable_nombre_completo', 'responsable_ci', 'responsable_telefono', 'responsable_parentesco']));
             RegistroAdmisionPaciente::query()->create([
                 'paciente_id' => $paciente->id,
                 'como_se_entero' => $datos['como_se_entero'],
@@ -26,7 +27,14 @@ class RegistrarPacienteService
                 'habilitado' => $datos['habilitado'] ?? true,
             ]);
             if ($responsable['nombre_completo']) {
-                $paciente->responsables()->create([...$responsable, 'activo' => true]);
+                $pacienteVinculado = !empty($responsable['ci'])
+                    ? Paciente::query()->where('ci', $responsable['ci'])->where('id', '!=', $paciente->id)->first()
+                    : null;
+                $paciente->responsables()->create([
+                    ...$responsable,
+                    'paciente_vinculado_id' => $pacienteVinculado?->id,
+                    'activo' => true,
+                ]);
             }
             return $paciente->load(['registrosAdmision', 'responsables']);
         });

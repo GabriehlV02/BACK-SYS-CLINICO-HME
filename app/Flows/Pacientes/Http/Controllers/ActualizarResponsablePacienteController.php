@@ -14,13 +14,23 @@ class ActualizarResponsablePacienteController
     {
         $datos = $request->validate([
             'nombre_completo' => ['required', 'string', 'max:180'],
+            'ci' => ['nullable', 'string', 'min:3', 'max:25'],
             'telefono' => ['nullable', 'string', 'max:30'],
             'parentesco' => ['nullable', 'string', 'max:80'],
         ]);
 
-        $responsable = DB::transaction(function () use ($paciente, $datos): PacienteResponsable {
+        $datos['ci'] = isset($datos['ci']) ? trim($datos['ci']) : null;
+        $pacienteVinculado = !empty($datos['ci'])
+            ? Paciente::query()->where('ci', $datos['ci'])->where('id', '!=', $paciente->id)->first()
+            : null;
+
+        $responsable = DB::transaction(function () use ($paciente, $datos, $pacienteVinculado): PacienteResponsable {
             $paciente->responsables()->where('activo', true)->update(['activo' => false]);
-            return $paciente->responsables()->create([...$datos, 'activo' => true]);
+            return $paciente->responsables()->create([
+                ...$datos,
+                'paciente_vinculado_id' => $pacienteVinculado?->id,
+                'activo' => true,
+            ]);
         });
 
         return response()->json(['data' => $responsable], 201);

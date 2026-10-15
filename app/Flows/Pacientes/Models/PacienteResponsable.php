@@ -12,7 +12,7 @@ class PacienteResponsable extends Model
 
     protected $table = 'paciente_responsables';
 
-    protected $fillable = ['paciente_id', 'nombre_completo', 'telefono', 'parentesco', 'activo'];
+    protected $fillable = ['paciente_id', 'paciente_vinculado_id', 'nombre_completo', 'ci', 'telefono', 'parentesco', 'activo'];
 
     protected function casts(): array
     {
@@ -22,5 +22,10 @@ class PacienteResponsable extends Model
     public function paciente(): BelongsTo
     {
         return $this->belongsTo(Paciente::class);
+    }
+
+    public function pacienteVinculado(): BelongsTo
+    {
+        return $this->belongsTo(Paciente::class, 'paciente_vinculado_id');
     }
 }
