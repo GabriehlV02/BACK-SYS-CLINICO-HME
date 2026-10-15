@@ -6,8 +6,8 @@ use App\Flows\Pacientes\Models\Paciente;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\Response;
 
 class OrthancController
@@ -77,28 +77,47 @@ class OrthancController
             'Force' => true,
         ])->throw();
 
+        Cache::store('file')->forget('orthanc.estudios');
+
         return response()->json($this->obtenerEstudio($id));
     }
 
     public function eliminar(string $id): Response
     {
         $this->orthanc()->delete("/studies/{$id}")->throw();
+        Cache::store('file')->forget('orthanc.estudios');
 
         return response()->noContent();
     }
 
     private function obtenerEstudios(): array
     {
-        return Cache::store('file')->remember('orthanc.estudios', now()->addSeconds(60), function (): array {
+        $estudios = Cache::store('file')->remember('orthanc.estudios', now()->addSeconds(60), function (): array {
             $ids = $this->orthanc()->get('/studies')->throw()->json();
-            $pacientes = Paciente::query()->get(['id', 'ci', 'nombres', 'apellido_paterno', 'apellido_materno']);
 
             return collect($ids)
-                ->map(fn (string $id) => $this->obtenerEstudio($id, $pacientes))
+                ->map(fn (string $id) => $this->obtenerEstudio($id, collect()))
                 ->sortByDesc('fechaEstudio')
                 ->values()
                 ->all();
         });
+
+        // Recalcular la asociación contra el padrón actual aunque los datos DICOM
+        // sigan en caché, para detectar pacientes registrados recientemente.
+        $pacientes = Paciente::query()->get(['id', 'ci', 'nombres', 'apellido_paterno', 'apellido_materno']);
+
+        return collect($estudios)
+            ->map(function (array $estudio) use ($pacientes): array {
+                $paciente = $this->buscarPaciente(
+                    $pacientes,
+                    (string) ($estudio['patientIdDicom'] ?? ''),
+                    (string) ($estudio['patientName'] ?? ''),
+                );
+                $estudio['pacienteId'] = $paciente?->id;
+
+                return $estudio;
+            })
+            ->all();
     }
 
     private function obtenerEstudio(string $id, $pacientes = null): array
@@ -110,6 +129,12 @@ class OrthancController
         $documento = trim((string) ($tagsPaciente['PatientID'] ?? ''));
         $pacientes ??= Paciente::query()->get(['id', 'ci', 'nombres', 'apellido_paterno', 'apellido_materno']);
         $paciente = $this->buscarPaciente($pacientes, $documento, $nombre);
+        $series = collect($estudio['Series'] ?? [])->map(
+            fn (string $serieId) => $this->orthanc()
+                ->get("/series/{$serieId}")
+                ->throw()
+                ->json(),
+        );
 
         return [
             'id' => $id,
@@ -120,14 +145,14 @@ class OrthancController
             'accessionNumber' => $tagsEstudio['AccessionNumber'] ?? '',
             'descripcion' => $tagsEstudio['StudyDescription'] ?? '',
             'fechaEstudio' => $tagsEstudio['StudyDate'] ?? '',
-            'modalidades' => array_values(array_unique(array_filter(array_map(
-                fn (string $serieId) => $this->orthanc()
-                    ->get("/series/{$serieId}")
-                    ->throw()
-                    ->json('MainDicomTags.Modality'),
-                $estudio['Series'] ?? [],
-            )))),
-            'cantidadSeries' => count($estudio['Series'] ?? []),
+            'modalidades' => $series
+                ->map(fn (array $serie) => data_get($serie, 'MainDicomTags.Modality'))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
+            'cantidadSeries' => $series->count(),
+            'cantidadImagenes' => $series->sum(fn (array $serie) => count($serie['Instances'] ?? [])),
             'actualizadoEn' => $estudio['LastUpdate'] ?? '',
         ];
     }
@@ -138,17 +163,19 @@ class OrthancController
         $documento = $normalizar($documento);
         $nombre = $normalizar($nombre);
 
-        return $pacientes->first(function (Paciente $paciente) use ($normalizar, $documento, $nombre): bool {
-            if ($documento !== '' && $normalizar($paciente->ci) === $documento) {
-                return true;
-            }
+        if ($documento !== '') {
+            return $pacientes->first(fn (Paciente $paciente) => $normalizar($paciente->ci) === $documento);
+        }
 
-            return $nombre !== '' && $normalizar(implode(' ', [
-                $paciente->nombres,
-                $paciente->apellido_paterno,
-                $paciente->apellido_materno,
-            ])) === $nombre;
-        });
+        if ($nombre === '') {
+            return null;
+        }
+
+        return $pacientes->first(fn (Paciente $paciente) => $normalizar(implode(' ', [
+            $paciente->nombres,
+            $paciente->apellido_paterno,
+            $paciente->apellido_materno,
+        ])) === $nombre);
     }
 
     private function orthanc(): PendingRequest
