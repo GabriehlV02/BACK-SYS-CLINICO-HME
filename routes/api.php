@@ -7,6 +7,7 @@ use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController
 use App\Flows\Pacientes\Http\Controllers\EstudiosController;
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
 use App\Flows\Pacientes\Http\Controllers\RegistrarPacienteController;
+use App\Flows\Atenciones\Http\EstanciasAtencionController;
 use App\Flows\Usuarios\Http\UsuariosController;
 use App\Flows\Usuarios\Http\RolesController;
 use App\Flows\Usuarios\Http\AlmacenesCajasController;
@@ -40,4 +41,7 @@ Route::prefix('v1')->group(function (): void {
     Route::get('/pacientes/{paciente}/estudios', [EstudiosController::class, 'index']);
     Route::post('/pacientes/{paciente}/estudios', [EstudiosController::class, 'store']);
     Route::patch('/estudios/{estudio}', [EstudiosController::class, 'actualizar']);
+    Route::get('/atenciones/{atencion}/estancias', [EstanciasAtencionController::class, 'index']);
+    Route::post('/atenciones/{atencion}/estancias', [EstanciasAtencionController::class, 'ingresar']);
+    Route::post('/atenciones/{atencion}/estancias/{estancia}/traslado', [EstanciasAtencionController::class, 'trasladar']);
 });
