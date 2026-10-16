@@ -4,10 +4,12 @@ use App\Flows\Autenticacion\Http\CambiarContrasenaController;
 use App\Flows\Autenticacion\Http\IniciarSesionController;
 use App\Flows\Imagenologia\Http\Controllers\OrthancController;
 use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController;
+use App\Flows\Pacientes\Http\Controllers\EstudiosController;
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
 use App\Flows\Pacientes\Http\Controllers\RegistrarPacienteController;
 use App\Flows\Usuarios\Http\UsuariosController;
 use App\Flows\Usuarios\Http\RolesController;
+use App\Flows\Usuarios\Http\AlmacenesCajasController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', IniciarSesionController::class);
@@ -28,7 +30,14 @@ Route::prefix('v1')->group(function (): void {
     Route::get('/roles', [RolesController::class, 'index']);
     Route::post('/roles', [RolesController::class, 'store']);
     Route::put('/roles/{rol}', [RolesController::class, 'update']);
+    Route::get('/operacion/almacenes-cajas', [AlmacenesCajasController::class, 'index']);
+    Route::post('/operacion/almacenes', [AlmacenesCajasController::class, 'storeAlmacen']);
+    Route::post('/operacion/cajas', [AlmacenesCajasController::class, 'storeCaja']);
+    Route::patch('/operacion/{tipo}/{id}/estado', [AlmacenesCajasController::class, 'cambiarEstado']);
     Route::post('/pacientes', RegistrarPacienteController::class);
     Route::get('/pacientes/buscar', BuscarPacientePorCiController::class);
     Route::post('/pacientes/{paciente}/responsables', ActualizarResponsablePacienteController::class);
+    Route::get('/pacientes/{paciente}/estudios', [EstudiosController::class, 'index']);
+    Route::post('/pacientes/{paciente}/estudios', [EstudiosController::class, 'store']);
+    Route::patch('/estudios/{estudio}', [EstudiosController::class, 'actualizar']);
 });
