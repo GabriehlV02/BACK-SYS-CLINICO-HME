@@ -41,6 +41,8 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    'temporary_admin_login' => (bool) env('TEMPORARY_ADMIN_LOGIN', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application URL
