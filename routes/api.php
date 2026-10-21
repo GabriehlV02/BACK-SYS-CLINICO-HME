@@ -22,6 +22,9 @@ Route::prefix('emergencias')->controller(EmergenciasController::class)->group(fu
     Route::get('/', 'index');
     Route::post('/', 'store');
     Route::get('/catalogo', 'catalogo');
+    Route::post('/{emergencia}/evaluacion', 'evaluacion');
+    Route::post('/{emergencia}/identidad', 'identidad');
+    Route::post('/{emergencia}/cierre', 'cierre');
 });
 
 Route::prefix('orthanc')->controller(OrthancController::class)->group(function (): void {

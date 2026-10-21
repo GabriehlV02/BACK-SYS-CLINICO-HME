@@ -75,10 +75,81 @@ class EmergenciasController
         return response()->json([]);
     }
 
+    public function evaluacion(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate([
+            'revision' => ['required', 'integer', 'min:0'],
+            'campos' => ['required', 'array'],
+            'campos.*' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+            $evaluaciones = $ingreso['evaluaciones'] ?? [];
+            $revision = count($evaluaciones) + 1;
+            $evaluaciones[] = [
+                'id' => (string) Str::uuid(), 'revision' => $revision, 'fecha' => now()->toIso8601String(),
+                'usuario' => 'Profesional de turno', 'campos' => $datos['campos'],
+            ];
+            $ingreso['evaluaciones'] = $evaluaciones;
+            return $ingreso;
+        });
+    }
+
+    public function identidad(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate(['revision' => ['required', 'integer', 'min:0']]);
+        $identidad = $request->except('revision');
+        foreach ($identidad as $campo => $valor) {
+            if (! is_string($valor) || mb_strlen($valor) > 200) {
+                return response()->json(['message' => "El campo {$campo} no es válido."], 422);
+            }
+        }
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($identidad): array {
+            $ingreso['identidad'] = array_filter(array_merge($ingreso['identidad'] ?? [], $identidad), fn ($valor) => $valor !== '');
+            return $ingreso;
+        });
+    }
+
+    public function cierre(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate([
+            'condicionEgreso' => ['required', Rule::in(['vivo', 'muerto'])],
+            'causaEgreso' => ['required', Rule::in(['hospitalaria', 'solicitada', 'fuga', 'transferencia', 'deceso', 'internacion'])],
+            'observacionEgreso' => ['nullable', 'string', 'max:3000'],
+        ]);
+
+        $cuenta = $this->buscar($emergencia);
+        $ingreso = json_decode($cuenta->datos_ingreso ?? '[]', true) ?: [];
+        $ingreso['cierre'] = [...$datos, 'fecha' => now()->toIso8601String(), 'usuario' => 'Profesional de turno'];
+        DB::transaction(function () use ($cuenta, $ingreso): void {
+            DB::table('emergencias')->where('id', $cuenta->id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
+            DB::table('atenciones')->where('id', $cuenta->atencion_id)->update(['estado' => 'finalizada', 'finalizada_en' => now(), 'updated_at' => now()]);
+        });
+        return response()->json($this->presentar($this->buscar($emergencia)));
+    }
+
+    private function actualizar(string $id, callable $mutar): JsonResponse
+    {
+        $cuenta = $this->buscar($id);
+        $ingreso = json_decode($cuenta->datos_ingreso ?? '[]', true) ?: [];
+        $ingreso = $mutar($ingreso);
+        DB::table('emergencias')->where('id', $id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
+        return response()->json($this->presentar($this->buscar($id)));
+    }
+
+    private function buscar(string $id): object
+    {
+        return DB::table('emergencias')->join('atenciones', 'atenciones.id', '=', 'emergencias.atencion_id')
+            ->where('emergencias.id', $id)
+            ->first(['emergencias.id', 'emergencias.atencion_id', 'emergencias.identidad_provisional', 'emergencias.datos_ingreso', 'atenciones.iniciada_en', 'atenciones.finalizada_en'])
+            ?? abort(404, 'Atención de emergencia no encontrada.');
+    }
+
     private function presentar(object $emergencia): array
     {
         $ingreso = json_decode($emergencia->datos_ingreso ?? '[]', true) ?: [];
-        $identidad = json_decode($emergencia->identidad_provisional ?? 'null', true);
+        $identidad = $ingreso['identidad'] ?? json_decode($emergencia->identidad_provisional ?? 'null', true);
 
         return [
             'id' => $emergencia->id,
@@ -89,8 +160,9 @@ class EmergenciasController
             'identidad' => $identidad,
             'signos' => [],
             'consumos' => [],
-            'evaluaciones' => [],
+            'evaluaciones' => $ingreso['evaluaciones'] ?? [],
             'ordenes' => [],
+            'cierre' => $ingreso['cierre'] ?? null,
         ];
     }
 }
