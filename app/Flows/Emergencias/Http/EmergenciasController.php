@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class EmergenciasController
 {
@@ -34,6 +35,9 @@ class EmergenciasController
         ]);
 
         $emergencia = DB::transaction(function () use ($datos): object {
+            if ($this->cubiculoOcupado($datos['cubiculo'])) {
+                throw ValidationException::withMessages(['cubiculo' => 'El cubículo seleccionado está ocupado. Libéralo o da de alta al paciente antes de usarlo nuevamente.']);
+            }
             $atencionId = (string) Str::uuid();
             $emergenciaId = (string) Str::uuid();
             $codigo = 'EMG-'.strtoupper(Str::substr(Str::uuid()->toString(), 0, 8));
@@ -52,6 +56,7 @@ class EmergenciasController
                 'id' => $emergenciaId,
                 'atencion_id' => $atencionId,
                 'codigo_emergencia' => $codigo,
+                'ubicacion_activa' => $datos['cubiculo'],
                 'identidad_provisional' => isset($datos['identidad']) ? json_encode($datos['identidad']) : null,
                 'datos_ingreso' => json_encode(['cubiculo' => $datos['cubiculo']]),
                 'created_at' => now(),
@@ -124,6 +129,7 @@ class EmergenciasController
         $ingreso['cierre'] = [...$datos, 'fecha' => now()->toIso8601String(), 'usuario' => 'Profesional de turno'];
         DB::transaction(function () use ($cuenta, $ingreso): void {
             DB::table('emergencias')->where('id', $cuenta->id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
+            DB::table('emergencias')->where('id', $cuenta->id)->update(['ubicacion_activa' => null]);
             DB::table('atenciones')->where('id', $cuenta->atencion_id)->update(['estado' => 'finalizada', 'finalizada_en' => now(), 'updated_at' => now()]);
         });
         return response()->json($this->presentar($this->buscar($emergencia)));
@@ -136,6 +142,19 @@ class EmergenciasController
         $ingreso = $mutar($ingreso);
         DB::table('emergencias')->where('id', $id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
         return response()->json($this->presentar($this->buscar($id)));
+    }
+
+    private function cubiculoOcupado(string $cubiculo): bool
+    {
+        return DB::table('emergencias')
+            ->join('atenciones', 'atenciones.id', '=', 'emergencias.atencion_id')
+            ->where('atenciones.tipo', 'emergencia')
+            ->whereNull('atenciones.finalizada_en')
+            ->where(function ($consulta) use ($cubiculo): void {
+                $consulta->where('emergencias.ubicacion_activa', $cubiculo)
+                    ->orWhere('emergencias.datos_ingreso->cubiculo', $cubiculo);
+            })
+            ->exists();
     }
 
     private function buscar(string $id): object
