@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 
 class EmergenciasController
 {
-    private const CUBICULOS = ['1', '2', '3', 'CRITICO'];
+    private const CUBICULOS = ['1', '2', '3', '4', '5', '6', '7', '8'];
 
     public function index(): JsonResponse
     {
@@ -31,6 +31,7 @@ class EmergenciasController
         $datos = $request->validate([
             'cubiculo' => ['required', 'string', Rule::in(self::CUBICULOS)],
             'identidad' => ['nullable', 'array'],
+            'horaIngreso' => ['nullable', 'date_format:H:i'],
             'solicitudId' => ['nullable', 'uuid'],
         ]);
 
@@ -45,13 +46,14 @@ class EmergenciasController
             $atencionId = (string) Str::uuid();
             $emergenciaId = (string) Str::uuid();
             $codigo = 'EMG-'.strtoupper(Str::substr(Str::uuid()->toString(), 0, 8));
+            $inicio = isset($datos['horaIngreso']) ? now()->setTimeFromTimeString($datos['horaIngreso']) : now();
 
             DB::table('atenciones')->insert([
                 'id' => $atencionId,
                 'tipo' => 'emergencia',
                 'codigo_atencion' => $codigo,
                 'estado' => 'en_curso',
-                'iniciada_en' => now(),
+                'iniciada_en' => $inicio,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -72,7 +74,7 @@ class EmergenciasController
                 'id' => $emergenciaId,
                 'identidad_provisional' => isset($datos['identidad']) ? json_encode($datos['identidad']) : null,
                 'datos_ingreso' => json_encode(['cubiculo' => $datos['cubiculo']]),
-                'iniciada_en' => now(),
+                'iniciada_en' => $inicio,
                 'finalizada_en' => null,
             ];
         });
