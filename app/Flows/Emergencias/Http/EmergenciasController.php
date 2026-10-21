@@ -38,6 +38,10 @@ class EmergenciasController
             if ($this->cubiculoOcupado($datos['cubiculo'])) {
                 throw ValidationException::withMessages(['cubiculo' => 'El cubículo seleccionado está ocupado. Libéralo o da de alta al paciente antes de usarlo nuevamente.']);
             }
+            $documento = $this->normalizarDocumento($datos['identidad']['documento'] ?? '');
+            if ($documento !== '' && $this->pacienteOcupado($documento)) {
+                throw ValidationException::withMessages(['identidad.documento' => 'Este CI ya tiene una atención de emergencia activa. No se puede registrar al mismo paciente dos veces.']);
+            }
             $atencionId = (string) Str::uuid();
             $emergenciaId = (string) Str::uuid();
             $codigo = 'EMG-'.strtoupper(Str::substr(Str::uuid()->toString(), 0, 8));
@@ -57,6 +61,7 @@ class EmergenciasController
                 'atencion_id' => $atencionId,
                 'codigo_emergencia' => $codigo,
                 'ubicacion_activa' => $datos['cubiculo'],
+                'paciente_activo_ci' => $documento ?: null,
                 'identidad_provisional' => isset($datos['identidad']) ? json_encode($datos['identidad']) : null,
                 'datos_ingreso' => json_encode(['cubiculo' => $datos['cubiculo']]),
                 'created_at' => now(),
@@ -110,9 +115,18 @@ class EmergenciasController
             }
         }
 
-        return $this->actualizar($emergencia, function (array $ingreso) use ($identidad): array {
+        return DB::transaction(function () use ($emergencia, $identidad): JsonResponse {
+            $cuenta = $this->buscar($emergencia);
+            $ingreso = json_decode($cuenta->datos_ingreso ?? '[]', true) ?: [];
             $ingreso['identidad'] = array_filter(array_merge($ingreso['identidad'] ?? [], $identidad), fn ($valor) => $valor !== '');
-            return $ingreso;
+            $documento = $this->normalizarDocumento($ingreso['identidad']['documento'] ?? '');
+            if ($documento !== '' && $this->pacienteOcupado($documento, $cuenta->id)) {
+                throw ValidationException::withMessages(['documento' => 'Este CI ya tiene una atención de emergencia activa. No se puede registrar al mismo paciente dos veces.']);
+            }
+            DB::table('emergencias')->where('id', $cuenta->id)->update([
+                'datos_ingreso' => json_encode($ingreso), 'paciente_activo_ci' => $documento ?: null, 'updated_at' => now(),
+            ]);
+            return response()->json($this->presentar($this->buscar($emergencia)));
         });
     }
 
@@ -129,7 +143,7 @@ class EmergenciasController
         $ingreso['cierre'] = [...$datos, 'fecha' => now()->toIso8601String(), 'usuario' => 'Profesional de turno'];
         DB::transaction(function () use ($cuenta, $ingreso): void {
             DB::table('emergencias')->where('id', $cuenta->id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
-            DB::table('emergencias')->where('id', $cuenta->id)->update(['ubicacion_activa' => null]);
+            DB::table('emergencias')->where('id', $cuenta->id)->update(['ubicacion_activa' => null, 'paciente_activo_ci' => null]);
             DB::table('atenciones')->where('id', $cuenta->atencion_id)->update(['estado' => 'finalizada', 'finalizada_en' => now(), 'updated_at' => now()]);
         });
         return response()->json($this->presentar($this->buscar($emergencia)));
@@ -155,6 +169,26 @@ class EmergenciasController
                     ->orWhere('emergencias.datos_ingreso->cubiculo', $cubiculo);
             })
             ->exists();
+    }
+
+    private function pacienteOcupado(string $documento, ?string $exceptoId = null): bool
+    {
+        return DB::table('emergencias')
+            ->join('atenciones', 'atenciones.id', '=', 'emergencias.atencion_id')
+            ->where('atenciones.tipo', 'emergencia')
+            ->whereNull('atenciones.finalizada_en')
+            ->when($exceptoId, fn ($consulta) => $consulta->where('emergencias.id', '!=', $exceptoId))
+            ->where(function ($consulta) use ($documento): void {
+                $consulta->where('emergencias.paciente_activo_ci', $documento)
+                    ->orWhere('emergencias.datos_ingreso->identidad->documento', $documento)
+                    ->orWhere('emergencias.identidad_provisional->documento', $documento);
+            })
+            ->exists();
+    }
+
+    private function normalizarDocumento(mixed $documento): string
+    {
+        return is_string($documento) ? strtoupper(preg_replace('/[\s-]+/', '', trim($documento)) ?? '') : '';
     }
 
     private function buscar(string $id): object
