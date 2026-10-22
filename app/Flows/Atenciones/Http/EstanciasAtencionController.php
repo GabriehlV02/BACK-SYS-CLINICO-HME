@@ -34,13 +34,14 @@ class EstanciasAtencionController
             'motivo_ingreso' => ['nullable', 'string', 'max:255'],
             'datos_area' => ['nullable', 'array'],
             'profesionales' => ['array'],
-            'profesionales.*.usuario_id' => ['nullable', 'uuid', Rule::exists('usuarios_sistema', 'id')],
-            'profesionales.*.medico_id' => ['nullable', 'uuid', Rule::exists('medicos', 'id')],
+            'profesionales.*.usuario_id' => ['required', 'uuid', Rule::exists('usuarios.usuarios_sistema', 'id')->where('tipo_usuario', 'EMPRESA')->where('estado', 'ACTIVO')],
+            'profesionales.*.medico_id' => ['prohibited'],
             'profesionales.*.rol' => ['required_with:profesionales', 'string', 'max:40'],
         ]);
 
         $estanciaId = (string) Str::uuid();
         DB::transaction(function () use ($atencion, $datos, $estanciaId): void {
+            DB::table('atenciones')->where('id', $atencion)->lockForUpdate()->first();
             // Solo una ubicación activa por atención: el traslado debe cerrar la anterior primero.
             abort_if(DB::table('estancias_atencion')->where('atencion_id', $atencion)->where('estado', 'ACTIVA')->exists(), 422, 'La atención ya tiene una estancia activa; use el traslado.');
             DB::table('estancias_atencion')->insert([
@@ -64,24 +65,26 @@ class EstanciasAtencionController
             'area' => ['required', Rule::in(self::AREAS)], 'espacio_atencion_id' => ['nullable', 'uuid', Rule::exists('espacios_atencion', 'id')],
             'motivo_salida' => ['nullable', 'string', 'max:255'], 'motivo_ingreso' => ['nullable', 'string', 'max:255'],
             'datos_area' => ['nullable', 'array'], 'profesionales' => ['array'],
-            'profesionales.*.usuario_id' => ['nullable', 'uuid', Rule::exists('usuarios_sistema', 'id')],
-            'profesionales.*.medico_id' => ['nullable', 'uuid', Rule::exists('medicos', 'id')],
+            'profesionales.*.usuario_id' => ['required', 'uuid', Rule::exists('usuarios.usuarios_sistema', 'id')->where('tipo_usuario', 'EMPRESA')->where('estado', 'ACTIVO')],
+            'profesionales.*.medico_id' => ['prohibited'],
             'profesionales.*.rol' => ['required_with:profesionales', 'string', 'max:40'],
         ]);
         $destinoId = (string) Str::uuid();
         DB::transaction(function () use ($origen, $datos, $destinoId): void {
+            DB::table('atenciones')->where('id', $origen->atencion_id)->lockForUpdate()->first();
+            abort_unless(DB::table('estancias_atencion')->where('id', $origen->id)->where('estado', 'ACTIVA')->exists(), 422, 'La estancia ya fue trasladada.');
             DB::table('estancias_atencion')->where('id', $origen->id)->update(['estado' => 'FINALIZADA', 'motivo_salida' => $datos['motivo_salida'] ?? null, 'egresada_en' => now(), 'updated_at' => now()]);
             DB::table('estancias_atencion')->insert(['id' => $destinoId, 'atencion_id' => $origen->atencion_id, 'area' => $datos['area'], 'espacio_atencion_id' => $datos['espacio_atencion_id'] ?? null, 'estado' => 'ACTIVA', 'motivo_ingreso' => $datos['motivo_ingreso'] ?? null, 'datos_area' => isset($datos['datos_area']) ? json_encode($datos['datos_area']) : null, 'ingresada_en' => now(), 'created_at' => now(), 'updated_at' => now()]);
             $this->asignarProfesionales($destinoId, $datos['profesionales'] ?? []);
         });
+
         return response()->json(['data' => $this->conProfesionales(DB::table('estancias_atencion')->find($destinoId))], 201);
     }
 
     private function asignarProfesionales(string $estanciaId, array $profesionales): void
     {
         foreach ($profesionales as $profesional) {
-            abort_if(empty($profesional['usuario_id']) && empty($profesional['medico_id']), 422, 'Cada profesional debe tener usuario_id o medico_id.');
-            DB::table('estancia_profesionales')->insert(['id' => (string) Str::uuid(), 'estancia_atencion_id' => $estanciaId, 'usuario_id' => $profesional['usuario_id'] ?? null, 'medico_id' => $profesional['medico_id'] ?? null, 'rol' => $profesional['rol'], 'asignado_en' => now(), 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('estancia_profesionales')->insert(['id' => (string) Str::uuid(), 'estancia_atencion_id' => $estanciaId, 'usuario_id' => $profesional['usuario_id'], 'rol' => $profesional['rol'], 'asignado_en' => now(), 'created_at' => now(), 'updated_at' => now()]);
         }
     }
 
@@ -89,6 +92,7 @@ class EstanciasAtencionController
     {
         $estancia->datos_area = json_decode($estancia->datos_area ?? 'null', true);
         $estancia->profesionales = DB::table('estancia_profesionales')->where('estancia_atencion_id', $estancia->id)->whereNull('retirado_en')->get();
+
         return $estancia;
     }
 }

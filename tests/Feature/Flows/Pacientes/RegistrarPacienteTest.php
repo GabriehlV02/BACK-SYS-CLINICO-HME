@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Flows\Pacientes;
 
+use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -11,6 +12,7 @@ class RegistrarPacienteTest extends TestCase
 
     public function test_registra_un_paciente(): void
     {
+        $this->withoutMiddleware(VerificarSesionCompartida::class);
         $response = $this->postJson('/api/v1/pacientes', [
             'nombres' => 'Ana', 'apellido_paterno' => 'Pérez', 'apellido_materno' => 'López',
             'ci' => '1234567', 'fecha_nacimiento' => '1990-05-12', 'genero' => 'FEMENINO',

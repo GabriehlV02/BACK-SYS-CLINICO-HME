@@ -103,7 +103,7 @@ return [
             'driver' => 'pgsql',
             'host' => env('USUARIOS_DB_HOST', '127.0.0.1'),
             'port' => env('USUARIOS_DB_PORT', '5432'),
-            'database' => env('USUARIOS_DB_DATABASE', 'bd_usuarios'),
+            'database' => env('USUARIOS_DB_DATABASE', 'sys_conta_hme'),
             'username' => env('USUARIOS_DB_USERNAME', 'hospital_app'),
             'password' => env('USUARIOS_DB_PASSWORD', ''),
             'charset' => 'utf8',

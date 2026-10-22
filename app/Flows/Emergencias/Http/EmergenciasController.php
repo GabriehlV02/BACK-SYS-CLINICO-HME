@@ -2,6 +2,7 @@
 
 namespace App\Flows\Emergencias\Http;
 
+use App\Flows\Farmacia\CatalogoCompartido;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -82,9 +83,9 @@ class EmergenciasController
         return response()->json($this->presentar($emergencia), 201);
     }
 
-    public function catalogo(): JsonResponse
+    public function catalogo(CatalogoCompartido $catalogo): JsonResponse
     {
-        return response()->json([]);
+        return response()->json($catalogo->obtener());
     }
 
     public function evaluacion(Request $request, string $emergencia): JsonResponse
@@ -103,6 +104,7 @@ class EmergenciasController
                 'usuario' => 'Profesional de turno', 'campos' => $datos['campos'],
             ];
             $ingreso['evaluaciones'] = $evaluaciones;
+
             return $ingreso;
         });
     }
@@ -128,6 +130,7 @@ class EmergenciasController
             DB::table('emergencias')->where('id', $cuenta->id)->update([
                 'datos_ingreso' => json_encode($ingreso), 'paciente_activo_ci' => $documento ?: null, 'updated_at' => now(),
             ]);
+
             return response()->json($this->presentar($this->buscar($emergencia)));
         });
     }
@@ -148,6 +151,7 @@ class EmergenciasController
             DB::table('emergencias')->where('id', $cuenta->id)->update(['ubicacion_activa' => null, 'paciente_activo_ci' => null]);
             DB::table('atenciones')->where('id', $cuenta->atencion_id)->update(['estado' => 'finalizada', 'finalizada_en' => now(), 'updated_at' => now()]);
         });
+
         return response()->json($this->presentar($this->buscar($emergencia)));
     }
 
@@ -157,6 +161,7 @@ class EmergenciasController
         $ingreso = json_decode($cuenta->datos_ingreso ?? '[]', true) ?: [];
         $ingreso = $mutar($ingreso);
         DB::table('emergencias')->where('id', $id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
+
         return response()->json($this->presentar($this->buscar($id)));
     }
 

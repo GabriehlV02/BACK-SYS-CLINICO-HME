@@ -3,15 +3,22 @@
 namespace App\Flows\Usuarios\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class UsuarioSistema extends Model
+class UsuarioSistema extends Authenticatable
 {
     use HasUuids;
+
+    protected $connection = 'usuarios';
 
     protected $table = 'usuarios_sistema';
 
     protected $hidden = ['password'];
+
+    protected function casts(): array
+    {
+        return ['cajas' => 'array'];
+    }
 
     protected $fillable = [
         'tipo_usuario',
@@ -22,7 +29,7 @@ class UsuarioSistema extends Model
         'apellidos',
         'ci',
         'correo',
-        'caja',
+        'cajas',
         'usuario',
         'password',
         'rol',

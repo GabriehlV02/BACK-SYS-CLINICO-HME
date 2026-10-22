@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Flows\Imagenologia;
 
+use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -13,6 +14,7 @@ class OrthancControllerTest extends TestCase
 
     public function test_eliminar_estudio_invalida_la_lista_en_cache(): void
     {
+        $this->withoutMiddleware(VerificarSesionCompartida::class);
         $id = '8d1f7c2a-8b11-4f45-b988-1439d3ae24ab';
         Cache::store('file')->put('orthanc.estudios', [['id' => $id]], 60);
         Http::fake(['*' => Http::response([], 200)]);
