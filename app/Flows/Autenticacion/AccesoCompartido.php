@@ -82,4 +82,22 @@ class AccesoCompartido
     {
         abort_unless(in_array($permiso, $this->permisos($usuarioId), true), 403, 'No tienes permiso para realizar esta acción.');
     }
+
+    public function almacenesPermitidos(): ?array
+    {
+        $usuario = request()->user();
+        abort_unless($usuario, 401);
+        if ($this->roles($usuario->id)->where('r.codigo', 'ADMINISTRADOR')->exists()) {
+            return null;
+        }
+
+        return $this->conexion()->table('almacen_usuario as au')
+            ->join('almacenes_inventario as a', 'a.id', '=', 'au.almacen_id')
+            ->join('sucursales_inventario as s', 's.id', '=', 'a.sucursal_id')
+            ->join('sucursal_usuario as su', function ($q): void {
+                $q->on('su.sucursal_id', '=', 's.id')->on('su.usuario_id', '=', 'au.usuario_id');
+            })
+            ->where('au.usuario_id', $usuario->id)->where('a.activo', true)->where('s.activo', true)
+            ->pluck('a.id')->map(fn ($id): int => (int) $id)->all();
+    }
 }

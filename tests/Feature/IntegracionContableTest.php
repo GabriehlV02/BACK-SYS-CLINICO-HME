@@ -166,7 +166,7 @@ class IntegracionContableTest extends TestCase
 
     public function test_catalogo_lee_productos_servicios_y_stock_real_sin_copiar_registros(): void
     {
-        $this->central();
+        $ids = $this->central();
         $schema = Schema::connection('usuarios');
         foreach (['tipos_inventario', 'unidades_inventario', 'categorias_inventario'] as $tabla) {
             $schema->create($tabla, function (Blueprint $t): void {
@@ -232,6 +232,40 @@ class IntegracionContableTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/farmacia/productos')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', 'item-1');
         $this->withToken($token)->postJson('/api/v1/farmacia/productos', [])->assertConflict();
         $this->assertSame(1, $db->table('items_inventario')->count());
+
+        // La misma cuenta restringida conserva el alcance contable al entrar al clínico.
+        $schema->create('sucursales_inventario', function (Blueprint $t): void {
+            $t->id();
+            $t->boolean('activo')->default(true);
+        });
+        $schema->create('almacenes_inventario', function (Blueprint $t): void {
+            $t->id();
+            $t->integer('sucursal_id');
+            $t->boolean('activo')->default(true);
+        });
+        $schema->create('sucursal_usuario', function (Blueprint $t): void {
+            $t->uuid('usuario_id');
+            $t->integer('sucursal_id');
+        });
+        $schema->create('almacen_usuario', function (Blueprint $t): void {
+            $t->uuid('usuario_id');
+            $t->integer('almacen_id');
+        });
+        $schema->table('existencias_lote', fn (Blueprint $t) => $t->integer('almacen_id')->nullable());
+        $db->table('sucursales_inventario')->insert(['id' => 1]);
+        $db->table('almacenes_inventario')->insert([['id' => 1, 'sucursal_id' => 1], ['id' => 2, 'sucursal_id' => 1]]);
+        $db->table('sucursal_usuario')->insert(['usuario_id' => $ids['usuario'], 'sucursal_id' => 1]);
+        $db->table('almacen_usuario')->insert(['usuario_id' => $ids['usuario'], 'almacen_id' => 1]);
+        $db->table('existencias_lote')->where('id', 1)->update(['almacen_id' => 1]);
+        $db->table('existencias_lote')->where('id', 2)->update(['almacen_id' => 2]);
+        $db->table('roles')->where('id', $ids['rol'])->update(['codigo' => 'OPERADOR']);
+        $this->withToken($token)->getJson('/api/catalogo')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.stock', 2.125);
+        $this->withToken($token)->getJson('/api/emergencias/catalogo')->assertOk()->assertJsonPath('0.stock', 2.125);
+        $db->table('almacen_usuario')->delete();
+        $this->withToken($token)->getJson('/api/catalogo')->assertOk()->assertJsonCount(0, 'data');
+        $db->table('almacen_usuario')->insert(['usuario_id' => $ids['usuario'], 'almacen_id' => 1]);
+        $db->table('sucursales_inventario')->where('id', 1)->update(['activo' => false]);
+        $this->withToken($token)->getJson('/api/v1/farmacia/productos')->assertOk()->assertJsonCount(0, 'data');
     }
 
     public function test_asigna_profesionales_centrales_sin_recrear_usuarios_locales_y_traslada_una_sola_vez(): void

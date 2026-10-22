@@ -5,6 +5,7 @@ namespace App\Flows\Usuarios\Http;
 use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class RegistrarUsuarioRequest extends FormRequest
 {
@@ -30,5 +31,19 @@ class RegistrarUsuarioRequest extends FormRequest
             'rol' => ['required', 'uuid', Rule::exists('usuarios.roles', 'id')->where('activo', true)],
             'estado' => ['sometimes', Rule::in(['ACTIVO', 'INACTIVO'])],
         ];
+    }
+
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->has('rol')) {
+                return;
+            }
+            $acceso = app(AccesoCompartido::class);
+            if ($acceso->conexion()->table('roles')->where('id', $this->input('rol'))->where('codigo', 'ADMINISTRADOR')->exists()
+                && ! $acceso->roles($this->user()->id)->where('r.codigo', 'ADMINISTRADOR')->exists()) {
+                $validator->errors()->add('rol', 'Solo el administrador puede asignar ese rol.');
+            }
+        }];
     }
 }

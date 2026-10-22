@@ -2,6 +2,7 @@
 
 namespace App\Flows\Farmacia;
 
+use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Support\Facades\DB;
 
 class CatalogoCompartido
@@ -9,13 +10,16 @@ class CatalogoCompartido
     public function obtener(): array
     {
         $db = DB::connection('usuarios');
+        $almacenes = app(AccesoCompartido::class)->almacenesPermitidos();
         $existencias = $db->table('existencias_lote as e')->join('lotes_items as l', 'l.id', '=', 'e.lote_id')
+            ->when($almacenes !== null, fn ($q) => $q->whereIn('e.almacen_id', $almacenes))
             ->selectRaw('l.item_id, SUM(e.cantidad) as cantidad')->groupBy('l.item_id')->pluck('cantidad', 'item_id');
         $productos = $db->table('items_inventario as i')->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')
             ->join('tipos_inventario as t', 't.id', '=', 'g.tipo_id')->join('unidades_inventario as u', 'u.id', '=', 'i.unidad_id')
             ->leftJoin('categorias_inventario as c', 'c.id', '=', 'g.categoria_id')
             ->where('i.estado', 'ACTIVO')->where('g.estado', 'ACTIVO')->where('t.activo', true)->where('u.activo', true)
             ->whereIn('t.tipo_base', ['PRODUCTO', 'INSUMO'])->orderBy('i.nombre_comercial')->orderBy('i.id')
+            ->when($almacenes !== null, fn ($q) => $q->whereIn('i.id', $existencias->keys()))
             ->get(['i.id', 'i.nombre_comercial', 'i.marca', 'i.presentacion', 'i.precio_1', 'i.precio_2', 'i.precio_3', 'g.nombre as generico', 't.tipo_base', 'u.nombre as unidad', 'c.nombre as categoria'])
             ->map(fn (object $i): array => ['id' => 'item-'.$i->id, 'contableId' => $i->id, 'origen' => 'CONTABLE', 'codigo' => 'ITM-'.str_pad((string) $i->id, 6, '0', STR_PAD_LEFT),
                 'nombre' => $i->nombre_comercial, 'generico' => $i->generico, 'marca' => $i->marca, 'presentacion' => $i->presentacion,

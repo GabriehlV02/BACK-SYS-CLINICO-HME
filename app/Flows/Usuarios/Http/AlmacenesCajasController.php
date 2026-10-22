@@ -18,7 +18,8 @@ class AlmacenesCajasController
     {
         $almacenes = $this->almacenes();
         $asignaciones = DB::table('caja_almacen')->get()->groupBy('caja_id');
-        $cajas = DB::table('cajas')->orderBy('nombre')->get()->map(function (object $caja) use ($almacenes, $asignaciones): object {
+        $permitidos = $this->acceso->almacenesPermitidos();
+        $cajas = DB::table('cajas')->when($permitidos !== null, fn ($q) => $q->whereIn('id', DB::table('caja_almacen')->whereIn('almacen_id', $permitidos)->select('caja_id')))->orderBy('nombre')->get()->map(function (object $caja) use ($almacenes, $asignaciones): object {
             $caja->tipos_item_permitidos = json_decode($caja->tipos_item_permitidos ?? '[]', true);
             $ids = ($asignaciones[$caja->id] ?? collect())->pluck('almacen_id');
             $caja->almacenes = $almacenes->whereIn('id', $ids)->values();
@@ -31,6 +32,7 @@ class AlmacenesCajasController
 
     public function storeAlmacen(Request $request): JsonResponse
     {
+        abort_unless($this->acceso->almacenesPermitidos() === null, 403);
         $this->acceso->exigir($request->user()->id, 'INVENTARIO_GESTIONAR');
         $data = $request->validate([
             'nombre' => ['required', 'string', 'max:120'],
@@ -82,6 +84,7 @@ class AlmacenesCajasController
 
     public function cambiarEstado(Request $request, string $tipo, string $id): JsonResponse
     {
+        abort_unless($this->acceso->almacenesPermitidos() === null, 403);
         abort_unless(in_array($tipo, ['almacenes', 'cajas'], true), 404);
         $this->acceso->exigir($request->user()->id, $tipo === 'almacenes' ? 'INVENTARIO_GESTIONAR' : 'USUARIOS_CREAR');
         if ($tipo === 'almacenes') {
@@ -111,7 +114,10 @@ class AlmacenesCajasController
 
     private function almacenes(): Collection
     {
+        $permitidos = $this->acceso->almacenesPermitidos();
+
         return $this->acceso->conexion()->table('almacenes_inventario as a')
+            ->when($permitidos !== null, fn ($q) => $q->whereIn('a.id', $permitidos))
             ->join('sucursales_inventario as s', 's.id', '=', 'a.sucursal_id')->orderBy('a.nombre')->orderBy('a.id')
             ->get(['a.id', 'a.nombre', 'a.codigo', 'a.activo', 's.activo as sucursal_activa', 's.nombre as sucursal'])
             ->map(fn (object $a): array => ['id' => (string) $a->id, 'nombre' => $a->nombre, 'codigo' => $a->codigo, 'sucursal' => $a->sucursal,
