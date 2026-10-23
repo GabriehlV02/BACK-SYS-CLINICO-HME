@@ -109,6 +109,33 @@ class EmergenciasController
         });
     }
 
+    public function signos(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate([
+            'valores' => ['required', 'array', 'min:1'],
+            'valores.*' => ['numeric', 'min:0'],
+            'observacion' => ['nullable', 'string', 'max:1000'],
+            'hora' => ['required', 'date_format:H:i'],
+        ]);
+
+        $cuenta = $this->buscar($emergencia);
+        abort_if($cuenta->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden registrar signos vitales.');
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+            $fecha = now()->setTimeFromTimeString($datos['hora']);
+            $ingreso['signos'] ??= [];
+            $ingreso['signos'][] = [
+                'id' => (string) Str::uuid(),
+                'fecha' => $fecha->toIso8601String(),
+                'valores' => $datos['valores'],
+                'observacion' => $datos['observacion'] ?? '',
+            ];
+            usort($ingreso['signos'], fn (array $a, array $b): int => strcmp($a['fecha'], $b['fecha']));
+
+            return $ingreso;
+        });
+    }
+
     public function identidad(Request $request, string $emergencia): JsonResponse
     {
         $datos = $request->validate(['revision' => ['required', 'integer', 'min:0']]);
@@ -218,7 +245,7 @@ class EmergenciasController
             'fin' => $emergencia->finalizada_en,
             'revision' => 1,
             'identidad' => $identidad,
-            'signos' => [],
+            'signos' => $ingreso['signos'] ?? [],
             'consumos' => [],
             'evaluaciones' => $ingreso['evaluaciones'] ?? [],
             'ordenes' => [],

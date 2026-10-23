@@ -35,6 +35,7 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
         Route::post('/', 'store');
         Route::get('/catalogo', 'catalogo');
         Route::post('/{emergencia}/evaluacion', 'evaluacion');
+        Route::post('/{emergencia}/signos', 'signos');
         Route::post('/{emergencia}/identidad', 'identidad');
         Route::post('/{emergencia}/cierre', 'cierre');
     });
