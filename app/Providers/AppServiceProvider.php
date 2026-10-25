@@ -27,5 +27,11 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($request->ip().'|'.(is_string($usuario) ? mb_strtolower($usuario) : ''));
         });
+        RateLimiter::for('recuperar-contrasena', function (Request $request) {
+            return Limit::perMinute(3)->by($request->ip().'|'.mb_strtolower((string) $request->input('identificador')));
+        });
+        RateLimiter::for('restablecer-contrasena', function (Request $request) {
+            return Limit::perMinute(5)->by($request->ip().'|'.mb_strtolower((string) $request->input('identificador')));
+        });
     }
 }

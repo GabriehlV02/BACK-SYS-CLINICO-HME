@@ -3,7 +3,9 @@
 use App\Flows\Atenciones\Http\EstanciasAtencionController;
 use App\Flows\Autenticacion\Http\CambiarContrasenaController;
 use App\Flows\Autenticacion\Http\IniciarSesionController;
+use App\Flows\Autenticacion\Http\RestablecerContrasenaController;
 use App\Flows\Autenticacion\Http\SesionCompartidaController;
+use App\Flows\Autenticacion\Http\SolicitarRecuperacionContrasenaController;
 use App\Flows\Emergencias\Http\EmergenciasController;
 use App\Flows\Farmacia\Http\CatalogoCompartidoController;
 use App\Flows\Farmacia\Http\FarmaciaAlmacenController;
@@ -19,6 +21,8 @@ use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', IniciarSesionController::class)->middleware('throttle:login-compartido');
+Route::post('/recuperar-contrasena', SolicitarRecuperacionContrasenaController::class)->middleware('throttle:recuperar-contrasena');
+Route::post('/restablecer-contrasena', RestablecerContrasenaController::class)->middleware('throttle:restablecer-contrasena');
 
 Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
     Route::get('/session', [SesionCompartidaController::class, 'show']);
