@@ -12,6 +12,7 @@ use App\Flows\Farmacia\Http\FarmaciaAlmacenController;
 use App\Flows\Imagenologia\Http\Controllers\OrthancController;
 use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController;
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
+use App\Flows\Pacientes\Http\Controllers\ClasificacionesEstudioController;
 use App\Flows\Pacientes\Http\Controllers\EstudiosController;
 use App\Flows\Pacientes\Http\Controllers\RegistrarPacienteController;
 use App\Flows\Usuarios\Http\AlmacenesCajasController;
@@ -66,6 +67,7 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
         Route::post('/pacientes', RegistrarPacienteController::class);
         Route::get('/pacientes/buscar', BuscarPacientePorCiController::class);
         Route::post('/pacientes/{paciente}/responsables', ActualizarResponsablePacienteController::class);
+        Route::get('/estudios/clasificaciones', [ClasificacionesEstudioController::class, 'index']);
         Route::get('/pacientes/{paciente}/estudios', [EstudiosController::class, 'index']);
         Route::post('/pacientes/{paciente}/estudios', [EstudiosController::class, 'store']);
         Route::patch('/estudios/{estudio}', [EstudiosController::class, 'actualizar']);
