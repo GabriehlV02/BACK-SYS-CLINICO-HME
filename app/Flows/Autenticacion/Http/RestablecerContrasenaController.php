@@ -24,7 +24,7 @@ class RestablecerContrasenaController
         $recuperacion = Cache::get($clave);
 
         if (! is_array($recuperacion) || ! isset($recuperacion['usuario_id'], $recuperacion['codigo_hash']) || ! hash_equals($recuperacion['codigo_hash'], hash('sha256', $datos['codigo']))) {
-            return response()->json(['message' => 'El cÃ³digo no es vÃ¡lido o ya expirÃ³. Solicita uno nuevo.'], 422);
+            return response()->json(['message' => 'El código no es válido o ya expiró. Solicita uno nuevo.'], 422);
         }
 
         $actualizados = $acceso->conexion()->table('usuarios_sistema')->where('id', $recuperacion['usuario_id'])->where('estado', 'ACTIVO')->update([
@@ -34,10 +34,10 @@ class RestablecerContrasenaController
         Cache::forget($clave);
 
         if ($actualizados !== 1) {
-            return response()->json(['message' => 'No se pudo restablecer la contraseÃ±a. Solicita un cÃ³digo nuevo.'], 422);
+            return response()->json(['message' => 'No se pudo restablecer la contraseña. Solicita un código nuevo.'], 422);
         }
 
-        return response()->json(['message' => 'Tu contraseÃ±a fue actualizada. Ya puedes iniciar sesiÃ³n.']);
+        return response()->json(['message' => 'Tu contraseña fue actualizada. Ya puedes iniciar sesión.']);
     }
 
     private function cacheKey(string $identificador): string

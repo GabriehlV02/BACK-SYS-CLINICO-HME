@@ -21,7 +21,7 @@ class CodigoRecuperacionContrasena extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'CÃ³digo para restablecer tu contraseÃ±a',
+            subject: 'Código para restablecer tu contraseña',
         );
     }
 
