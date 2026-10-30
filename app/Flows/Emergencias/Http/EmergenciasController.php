@@ -4,6 +4,7 @@ namespace App\Flows\Emergencias\Http;
 
 use App\Flows\Farmacia\CatalogoCompartido;
 use App\Flows\Pacientes\Models\Paciente;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,7 @@ class EmergenciasController
             'cubiculo' => ['required', 'string', Rule::in(self::CUBICULOS)],
             'identidad' => ['nullable', 'array'],
             'horaIngreso' => ['nullable', 'date_format:H:i'],
+            'inicio' => ['nullable', 'date'],
             'solicitudId' => ['nullable', 'uuid'],
         ]);
 
@@ -48,7 +50,9 @@ class EmergenciasController
             $atencionId = (string) Str::uuid();
             $emergenciaId = (string) Str::uuid();
             $codigo = 'EMG-'.strtoupper(Str::substr(Str::uuid()->toString(), 0, 8));
-            $inicio = isset($datos['horaIngreso']) ? now()->setTimeFromTimeString($datos['horaIngreso']) : now();
+            $inicio = isset($datos['inicio'])
+                ? Carbon::parse($datos['inicio'])->setTimezone(config('app.timezone'))
+                : (isset($datos['horaIngreso']) ? now()->setTimeFromTimeString($datos['horaIngreso']) : now());
 
             DB::table('atenciones')->insert([
                 'id' => $atencionId,

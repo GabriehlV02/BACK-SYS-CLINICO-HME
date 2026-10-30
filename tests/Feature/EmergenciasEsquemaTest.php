@@ -11,6 +11,24 @@ class EmergenciasEsquemaTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_inicia_sin_identificacion_y_conserva_la_fecha_de_ingreso(): void
+    {
+        $this->withoutMiddleware(VerificarSesionCompartida::class);
+
+        $respuesta = $this->postJson('/api/emergencias', [
+            'cubiculo' => '2',
+            'inicio' => '2026-10-29T15:35:00.000Z',
+        ])->assertCreated()->assertJsonPath('identidad', null);
+
+        $atencion = DB::table('emergencias')->where('id', $respuesta->json('id'))->value('atencion_id');
+        $this->assertDatabaseHas('atenciones', [
+            'id' => $atencion,
+            'paciente_id' => null,
+            'iniciada_en' => '2026-10-29 15:35:00',
+        ]);
+        $this->postJson('/api/emergencias', ['cubiculo' => '3', 'inicio' => 'fecha inválida'])->assertUnprocessable();
+    }
+
     public function test_registra_evalua_y_cierra_emergencia_sin_tablas_anticipadas(): void
     {
         $this->withoutMiddleware(VerificarSesionCompartida::class);
