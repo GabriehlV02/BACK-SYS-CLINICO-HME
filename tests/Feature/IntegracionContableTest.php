@@ -87,6 +87,54 @@ class IntegracionContableTest extends TestCase
         return $this->postJson('/api/login', ['usuario' => 'central', 'password' => 'ClaveCompartida1'])->assertOk()->json('token');
     }
 
+    public function test_reporte_de_farmacia_exige_permiso_y_solo_incluye_sus_ventas(): void
+    {
+        $ids = $this->central();
+        $schema = Schema::connection('usuarios');
+        $schema->create('clientes', function (Blueprint $t): void {
+            $t->uuid('id')->primary();
+            $t->string('nombre_razon_social');
+        });
+        $schema->create('carritos_venta', function (Blueprint $t): void {
+            $t->uuid('id')->primary();
+            $t->uuid('cliente_id');
+            $t->string('codigo');
+            $t->string('estado');
+            $t->decimal('total', 12, 2);
+            $t->string('observaciones')->nullable();
+            $t->timestamp('cobrada_en');
+        });
+        $schema->create('carrito_venta_detalles', function (Blueprint $t): void {
+            $t->uuid('id')->primary();
+            $t->uuid('carrito_venta_id');
+            $t->string('codigo_item')->nullable();
+            $t->string('nombre_item');
+            $t->decimal('cantidad', 12, 3);
+            $t->decimal('total', 12, 2);
+        });
+        $db = DB::connection('usuarios');
+        $cliente = (string) Str::uuid();
+        $venta = (string) Str::uuid();
+        $db->table('clientes')->insert(['id' => $cliente, 'nombre_razon_social' => 'Cliente de prueba']);
+        $db->table('carritos_venta')->insert([
+            ['id' => $venta, 'cliente_id' => $cliente, 'codigo' => 'VTA-1', 'estado' => 'COMPLETADA', 'total' => 24, 'observaciones' => 'Origen: farmacia', 'cobrada_en' => '2026-10-30 12:00:00'],
+            ['id' => (string) Str::uuid(), 'cliente_id' => $cliente, 'codigo' => 'VTA-2', 'estado' => 'COMPLETADA', 'total' => 50, 'observaciones' => null, 'cobrada_en' => '2026-10-30 12:00:00'],
+        ]);
+        $db->table('carrito_venta_detalles')->insert(['id' => (string) Str::uuid(), 'carrito_venta_id' => $venta, 'codigo_item' => 'P-1', 'nombre_item' => 'Producto', 'cantidad' => 2, 'total' => 24]);
+        $ruta = '/api/v1/farmacia/reportes/ventas?fecha_desde=2026-10-30&fecha_hasta=2026-10-30';
+        $this->getJson($ruta)->assertUnauthorized();
+        $token = $this->login();
+        $this->withToken($token)->getJson($ruta)->assertForbidden();
+        $sistema = (string) Str::uuid();
+        $permiso = (string) Str::uuid();
+        $db->table('sistemas')->insert(['id' => $sistema, 'codigo' => 'CONTABLE', 'activo' => true]);
+        $db->table('rol_sistema')->insert(['rol_id' => $ids['rol'], 'sistema_id' => $sistema]);
+        $db->table('permisos')->insert(['id' => $permiso, 'sistema_id' => $sistema, 'codigo' => 'VENTAS_VER', 'activo' => true]);
+        $db->table('permiso_rol')->insert(['rol_id' => $ids['rol'], 'permiso_id' => $permiso]);
+        $this->withToken($token)->getJson($ruta)->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.codigo', 'VTA-1')->assertJsonPath('data.0.detalles.0.nombre_item', 'Producto');
+        $this->withToken($token)->getJson('/api/v1/farmacia/reportes/ventas?fecha_desde=2026-10-31&fecha_hasta=2026-10-31')->assertOk()->assertJsonCount(0, 'data');
+    }
+
     public function test_cuenta_central_inicia_sesion_y_lista_los_mismos_usuarios(): void
     {
         $ids = $this->central();

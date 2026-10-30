@@ -9,6 +9,7 @@ use App\Flows\Autenticacion\Http\SolicitarRecuperacionContrasenaController;
 use App\Flows\Emergencias\Http\EmergenciasController;
 use App\Flows\Farmacia\Http\CatalogoCompartidoController;
 use App\Flows\Farmacia\Http\FarmaciaAlmacenController;
+use App\Flows\Farmacia\Http\ReporteVentasFarmaciaController;
 use App\Flows\Imagenologia\Http\Controllers\OrthancController;
 use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController;
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
@@ -69,6 +70,7 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
     });
 
     Route::prefix('v1')->group(function (): void {
+        Route::get('/farmacia/reportes/ventas', ReporteVentasFarmaciaController::class);
         Route::get('/farmacia/productos', [FarmaciaAlmacenController::class, 'index']);
         Route::post('/farmacia/productos', [FarmaciaAlmacenController::class, 'store']);
         Route::get('/farmacia/almacen', [FarmaciaAlmacenController::class, 'index']);
