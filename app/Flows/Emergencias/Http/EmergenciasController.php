@@ -24,7 +24,7 @@ class EmergenciasController
             ->map(fn (object $emergencia): array => $this->presentar($emergencia))
             ->values();
 
-        return response()->json(['cuentas' => $cuentas]);
+        return response()->json(['cuentas' => $cuentas, 'ahora' => now()->toIso8601String()]);
     }
 
     public function store(Request $request): JsonResponse
@@ -109,6 +109,88 @@ class EmergenciasController
         });
     }
 
+    public function orden(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate([
+            'tipo' => ['required', Rule::in(['medicamento', 'servicio', 'laboratorio', 'imagenologia', 'internacion', 'cuidado'])],
+            'titulo' => ['required', 'string', 'max:200'],
+            'indicaciones' => ['nullable', 'string', 'max:5000'],
+            'dosis' => ['nullable', 'string', 'max:200'], 'via' => ['nullable', 'string', 'max:200'],
+            'frecuencia' => ['nullable', 'string', 'max:200'], 'duracion' => ['nullable', 'string', 'max:200'],
+            'itemId' => ['nullable', 'string', 'max:100'], 'porHora' => ['nullable', 'boolean'],
+        ]);
+        abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden registrar órdenes.');
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+            $ordenes = $ingreso['ordenes'] ?? [];
+            $ordenes[] = [...$datos, 'id' => (string) Str::uuid(), 'revision' => 1, 'fecha' => now()->toIso8601String(), 'usuario' => 'Profesional de turno', 'estado' => 'pendiente', 'aplicaciones' => [], 'historial' => []];
+            $ingreso['ordenes'] = $ordenes;
+
+            return $ingreso;
+        });
+    }
+
+    public function usoEnfermeria(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate([
+            'tipo' => ['required', Rule::in(['cuidado', 'procedimiento', 'insumo'])],
+            'detalle' => ['required', 'string', 'max:500'],
+            'cantidad' => ['nullable', 'numeric', 'gt:0'],
+            'unidad' => ['nullable', 'string', 'max:80'],
+            'observacion' => ['nullable', 'string', 'max:1000'],
+        ]);
+        abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden registrar actividades.');
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+            $registros = $ingreso['registrosEnfermeria'] ?? [];
+            $registros[] = [...$datos, 'id' => (string) Str::uuid(), 'fecha' => now()->toIso8601String(), 'usuario' => 'Enfermería'];
+            $ingreso['registrosEnfermeria'] = $registros;
+
+            return $ingreso;
+        });
+    }
+
+    public function consumo(Request $request, string $emergencia, CatalogoCompartido $catalogo): JsonResponse
+    {
+        $datos = $request->validate(['itemId' => ['required', 'string', 'max:100'], 'cantidad' => ['nullable', 'numeric', 'gt:0'], 'porHora' => ['required', 'boolean'], 'registroId' => ['required', 'uuid'], 'ordenId' => ['nullable', 'string', 'max:100']]);
+        abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada.');
+        $item = collect($catalogo->obtener())->firstWhere('id', $datos['itemId']);
+        abort_unless($item, 422, 'El servicio seleccionado ya no está disponible en el catálogo.');
+        abort_if($datos['porHora'] && ! preg_match('/^(hora|horas|hr|hrs)$/i', trim((string) $item['unidad'])), 422, 'Este ítem no tiene tarifa por hora.');
+        $consumo = [...$item, 'itemId' => $item['id'], 'registroId' => $datos['registroId'], 'cantidad' => (float) ($datos['cantidad'] ?? 1), 'porHora' => $datos['porHora'], 'inicio' => now()->toIso8601String(), 'fin' => null];
+        if (! empty($datos['ordenId'])) {
+            $consumo['ordenId'] = $datos['ordenId'];
+        }
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($consumo): array {
+            $ingreso['consumos'] ??= [];
+            $ingreso['consumos'][] = $consumo;
+
+            return $ingreso;
+        });
+    }
+
+    public function finalizarConsumo(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate(['registroId' => ['required', 'uuid']]);
+        abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada.');
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+            $encontrado = false;
+            foreach ($ingreso['consumos'] ?? [] as &$consumo) {
+                if (($consumo['registroId'] ?? null) === $datos['registroId'] && ($consumo['porHora'] ?? false) && empty($consumo['fin'])) {
+                    $consumo['fin'] = now()->toIso8601String();
+                    $encontrado = true;
+                    break;
+                }
+            }
+            unset($consumo);
+            abort_unless($encontrado, 422, 'El contador ya está pausado o no existe.');
+
+            return $ingreso;
+        });
+    }
+
     public function signos(Request $request, string $emergencia): JsonResponse
     {
         $datos = $request->validate([
@@ -168,11 +250,19 @@ class EmergenciasController
             'condicionEgreso' => ['required', Rule::in(['vivo', 'muerto'])],
             'causaEgreso' => ['required', Rule::in(['hospitalaria', 'solicitada', 'fuga', 'transferencia', 'deceso', 'internacion'])],
             'observacionEgreso' => ['nullable', 'string', 'max:3000'],
+            'pago' => ['nullable', 'array'],
         ]);
 
         $cuenta = $this->buscar($emergencia);
         $ingreso = json_decode($cuenta->datos_ingreso ?? '[]', true) ?: [];
-        $ingreso['cierre'] = [...$datos, 'fecha' => now()->toIso8601String(), 'usuario' => 'Profesional de turno'];
+        $fechaCierre = now()->toIso8601String();
+        foreach ($ingreso['consumos'] ?? [] as &$consumo) {
+            if (($consumo['porHora'] ?? false) && empty($consumo['fin'])) {
+                $consumo['fin'] = $fechaCierre;
+            }
+        }
+        unset($consumo);
+        $ingreso['cierre'] = [...$datos, 'fecha' => $fechaCierre, 'usuario' => 'Profesional de turno'];
         DB::transaction(function () use ($cuenta, $ingreso): void {
             DB::table('emergencias')->where('id', $cuenta->id)->update(['datos_ingreso' => json_encode($ingreso), 'updated_at' => now()]);
             DB::table('emergencias')->where('id', $cuenta->id)->update(['ubicacion_activa' => null, 'paciente_activo_ci' => null]);
@@ -243,12 +333,13 @@ class EmergenciasController
             'cubiculo' => $ingreso['cubiculo'] ?? '',
             'inicio' => $emergencia->iniciada_en,
             'fin' => $emergencia->finalizada_en,
-            'revision' => 1,
+            'revision' => crc32($emergencia->datos_ingreso ?? ''),
             'identidad' => $identidad,
             'signos' => $ingreso['signos'] ?? [],
-            'consumos' => [],
+            'consumos' => $ingreso['consumos'] ?? [],
             'evaluaciones' => $ingreso['evaluaciones'] ?? [],
-            'ordenes' => [],
+            'ordenes' => $ingreso['ordenes'] ?? [],
+            'registrosEnfermeria' => $ingreso['registrosEnfermeria'] ?? [],
             'cierre' => $ingreso['cierre'] ?? null,
         ];
     }
