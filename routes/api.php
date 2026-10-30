@@ -14,18 +14,32 @@ use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
 use App\Flows\Pacientes\Http\Controllers\ClasificacionesEstudioController;
 use App\Flows\Pacientes\Http\Controllers\EstudiosController;
+use App\Flows\Pacientes\Http\Controllers\ListarPacientesController;
 use App\Flows\Pacientes\Http\Controllers\RegistrarPacienteController;
 use App\Flows\Usuarios\Http\AlmacenesCajasController;
 use App\Flows\Usuarios\Http\RolesController;
 use App\Flows\Usuarios\Http\UsuariosController;
+use App\Http\Controllers\CitasController;
+use App\Http\Controllers\PacienteFichaController;
+use App\Http\Controllers\ProfesionalesCompartidosController;
+use App\Http\Controllers\VincularClienteContableController;
+use App\Http\Middleware\VerificarIntegracionContable;
 use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', IniciarSesionController::class)->middleware('throttle:login-compartido');
+Route::middleware(VerificarIntegracionContable::class)->prefix('integraciones/contable')->group(function (): void {
+    Route::get('/pacientes', ListarPacientesController::class);
+    Route::post('/pacientes', RegistrarPacienteController::class);
+});
 Route::post('/recuperar-contrasena', SolicitarRecuperacionContrasenaController::class)->middleware('throttle:recuperar-contrasena');
 Route::post('/restablecer-contrasena', RestablecerContrasenaController::class)->middleware('throttle:restablecer-contrasena');
 
 Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
+    Route::get('/v1/profesionales', ProfesionalesCompartidosController::class);
+    Route::get('/citas', [CitasController::class, 'index']);
+    Route::post('/citas', [CitasController::class, 'store']);
+    Route::patch('/citas/{cita}/estado', [CitasController::class, 'estado'])->whereNumber('cita');
     Route::get('/session', [SesionCompartidaController::class, 'show']);
     Route::post('/logout', [SesionCompartidaController::class, 'destroy']);
     Route::get('/catalogo', CatalogoCompartidoController::class);
@@ -65,7 +79,12 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
         Route::post('/operacion/cajas', [AlmacenesCajasController::class, 'storeCaja']);
         Route::patch('/operacion/{tipo}/{id}/estado', [AlmacenesCajasController::class, 'cambiarEstado']);
         Route::post('/pacientes', RegistrarPacienteController::class);
+        Route::get('/pacientes', ListarPacientesController::class);
+        Route::get('/estudios/agenda', [EstudiosController::class, 'agenda']);
         Route::get('/pacientes/buscar', BuscarPacientePorCiController::class);
+        Route::post('/pacientes/{paciente}/cliente-contable', VincularClienteContableController::class)->whereUuid('paciente');
+        Route::get('/pacientes/{paciente}', [PacienteFichaController::class, 'show'])->whereUuid('paciente');
+        Route::put('/pacientes/{paciente}', [PacienteFichaController::class, 'update'])->whereUuid('paciente');
         Route::post('/pacientes/{paciente}/responsables', ActualizarResponsablePacienteController::class);
         Route::get('/estudios/clasificaciones', [ClasificacionesEstudioController::class, 'index']);
         Route::get('/pacientes/{paciente}/estudios', [EstudiosController::class, 'index']);

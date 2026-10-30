@@ -4,6 +4,7 @@ namespace App\Flows\Pacientes\Services;
 
 use App\Flows\Pacientes\Models\Paciente;
 use App\Flows\Pacientes\Models\RegistroAdmisionPaciente;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 class RegistrarPacienteService
@@ -19,7 +20,11 @@ class RegistrarPacienteService
                 'telefono' => $datos['responsable_telefono'] ?? null,
                 'parentesco' => $datos['responsable_parentesco'] ?? null,
             ];
-            $paciente = Paciente::query()->create(\Illuminate\Support\Arr::except($datos, ['como_se_entero', 'observaciones', 'habilitado', 'responsable_nombre_completo', 'responsable_ci', 'responsable_telefono', 'responsable_parentesco']));
+            $paciente = Paciente::query()->create(Arr::except($datos, ['como_se_entero', 'observaciones', 'habilitado', 'responsable_nombre_completo', 'responsable_ci', 'responsable_telefono', 'responsable_parentesco']));
+            $documento = strtoupper(preg_replace('/[\s-]+/', '', trim($paciente->ci)) ?? '');
+            DB::table('atenciones')->whereNull('paciente_id')->whereIn('id',
+                DB::table('emergencias')->select('atencion_id')->where('paciente_activo_ci', $documento)
+            )->update(['paciente_id' => $paciente->id, 'updated_at' => now()]);
             RegistroAdmisionPaciente::query()->create([
                 'paciente_id' => $paciente->id,
                 'como_se_entero' => $datos['como_se_entero'],
@@ -27,7 +32,7 @@ class RegistrarPacienteService
                 'habilitado' => $datos['habilitado'] ?? true,
             ]);
             if ($responsable['nombre_completo']) {
-                $pacienteVinculado = !empty($responsable['ci'])
+                $pacienteVinculado = ! empty($responsable['ci'])
                     ? Paciente::query()->where('ci', $responsable['ci'])->where('id', '!=', $paciente->id)->first()
                     : null;
                 $paciente->responsables()->create([
@@ -36,6 +41,7 @@ class RegistrarPacienteService
                     'activo' => true,
                 ]);
             }
+
             return $paciente->load(['registrosAdmision', 'responsables']);
         });
     }

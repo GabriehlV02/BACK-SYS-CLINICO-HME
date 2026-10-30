@@ -3,6 +3,7 @@
 namespace App\Flows\Emergencias\Http;
 
 use App\Flows\Farmacia\CatalogoCompartido;
+use App\Flows\Pacientes\Models\Paciente;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ class EmergenciasController
             ->join('atenciones', 'atenciones.id', '=', 'emergencias.atencion_id')
             ->where('atenciones.tipo', 'emergencia')
             ->orderByDesc('atenciones.iniciada_en')
-            ->get(['emergencias.id', 'emergencias.identidad_provisional', 'emergencias.datos_ingreso', 'atenciones.iniciada_en', 'atenciones.finalizada_en'])
+            ->get(['emergencias.id', 'emergencias.identidad_provisional', 'emergencias.datos_ingreso', 'atenciones.paciente_id', 'atenciones.iniciada_en', 'atenciones.finalizada_en'])
             ->map(fn (object $emergencia): array => $this->presentar($emergencia))
             ->values();
 
@@ -51,6 +52,7 @@ class EmergenciasController
 
             DB::table('atenciones')->insert([
                 'id' => $atencionId,
+                'paciente_id' => $this->pacientePorCi($documento),
                 'tipo' => 'emergencia',
                 'codigo_atencion' => $codigo,
                 'estado' => 'en_curso',
@@ -73,6 +75,7 @@ class EmergenciasController
 
             return (object) [
                 'id' => $emergenciaId,
+                'paciente_id' => $this->pacientePorCi($documento),
                 'identidad_provisional' => isset($datos['identidad']) ? json_encode($datos['identidad']) : null,
                 'datos_ingreso' => json_encode(['cubiculo' => $datos['cubiculo']]),
                 'iniciada_en' => $inicio,
@@ -157,6 +160,9 @@ class EmergenciasController
             DB::table('emergencias')->where('id', $cuenta->id)->update([
                 'datos_ingreso' => json_encode($ingreso), 'paciente_activo_ci' => $documento ?: null, 'updated_at' => now(),
             ]);
+            DB::table('atenciones')->where('id', $cuenta->atencion_id)->update([
+                'paciente_id' => $this->pacientePorCi($documento), 'updated_at' => now(),
+            ]);
 
             return response()->json($this->presentar($this->buscar($emergencia)));
         });
@@ -229,8 +235,18 @@ class EmergenciasController
     {
         return DB::table('emergencias')->join('atenciones', 'atenciones.id', '=', 'emergencias.atencion_id')
             ->where('emergencias.id', $id)
-            ->first(['emergencias.id', 'emergencias.atencion_id', 'emergencias.identidad_provisional', 'emergencias.datos_ingreso', 'atenciones.iniciada_en', 'atenciones.finalizada_en'])
+            ->first(['emergencias.id', 'emergencias.atencion_id', 'emergencias.identidad_provisional', 'emergencias.datos_ingreso', 'atenciones.paciente_id', 'atenciones.iniciada_en', 'atenciones.finalizada_en'])
             ?? abort(404, 'Atención de emergencia no encontrada.');
+    }
+
+    private function pacientePorCi(string $documento): ?string
+    {
+        if ($documento === '') {
+            return null;
+        }
+
+        return Paciente::query()
+            ->whereRaw("UPPER(REPLACE(REPLACE(ci, ' ', ''), '-', '')) = ?", [$documento])->value('id');
     }
 
     private function presentar(object $emergencia): array
@@ -240,6 +256,7 @@ class EmergenciasController
 
         return [
             'id' => $emergencia->id,
+            'pacienteId' => $emergencia->paciente_id ?? null,
             'cubiculo' => $ingreso['cubiculo'] ?? '',
             'inicio' => $emergencia->iniciada_en,
             'fin' => $emergencia->finalizada_en,

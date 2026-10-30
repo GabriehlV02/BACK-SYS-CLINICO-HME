@@ -2,11 +2,13 @@
 
 namespace App\Flows\Atenciones\Http;
 
+use App\Flows\Atenciones\ProfesionalesCompartidos;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class EstanciasAtencionController
 {
@@ -34,7 +36,8 @@ class EstanciasAtencionController
             'motivo_ingreso' => ['nullable', 'string', 'max:255'],
             'datos_area' => ['nullable', 'array'],
             'profesionales' => ['array'],
-            'profesionales.*.usuario_id' => ['required', 'uuid', Rule::exists('usuarios.usuarios_sistema', 'id')->where('tipo_usuario', 'EMPRESA')->where('estado', 'ACTIVO')],
+            'profesionales.*.profesional_id' => ['required_without:profesionales.*.usuario_id', 'nullable', 'uuid'],
+            'profesionales.*.usuario_id' => ['required_without:profesionales.*.profesional_id', 'nullable', 'uuid', Rule::exists('usuarios.usuarios_sistema', 'id')->where('tipo_usuario', 'EMPRESA')->where('estado', 'ACTIVO')],
             'profesionales.*.medico_id' => ['prohibited'],
             'profesionales.*.rol' => ['required_with:profesionales', 'string', 'max:40'],
         ]);
@@ -65,7 +68,8 @@ class EstanciasAtencionController
             'area' => ['required', Rule::in(self::AREAS)], 'espacio_atencion_id' => ['nullable', 'uuid', Rule::exists('espacios_atencion', 'id')],
             'motivo_salida' => ['nullable', 'string', 'max:255'], 'motivo_ingreso' => ['nullable', 'string', 'max:255'],
             'datos_area' => ['nullable', 'array'], 'profesionales' => ['array'],
-            'profesionales.*.usuario_id' => ['required', 'uuid', Rule::exists('usuarios.usuarios_sistema', 'id')->where('tipo_usuario', 'EMPRESA')->where('estado', 'ACTIVO')],
+            'profesionales.*.profesional_id' => ['required_without:profesionales.*.usuario_id', 'nullable', 'uuid'],
+            'profesionales.*.usuario_id' => ['required_without:profesionales.*.profesional_id', 'nullable', 'uuid', Rule::exists('usuarios.usuarios_sistema', 'id')->where('tipo_usuario', 'EMPRESA')->where('estado', 'ACTIVO')],
             'profesionales.*.medico_id' => ['prohibited'],
             'profesionales.*.rol' => ['required_with:profesionales', 'string', 'max:40'],
         ]);
@@ -84,7 +88,11 @@ class EstanciasAtencionController
     private function asignarProfesionales(string $estanciaId, array $profesionales): void
     {
         foreach ($profesionales as $profesional) {
-            DB::table('estancia_profesionales')->insert(['id' => (string) Str::uuid(), 'estancia_atencion_id' => $estanciaId, 'usuario_id' => $profesional['usuario_id'], 'rol' => $profesional['rol'], 'asignado_en' => now(), 'created_at' => now(), 'updated_at' => now()]);
+            $registro = ! empty($profesional['profesional_id']) ? app(ProfesionalesCompartidos::class)->buscar($profesional['profesional_id']) : null;
+            if ($registro && ! empty($profesional['usuario_id']) && $registro->usuario_id !== $profesional['usuario_id']) {
+                throw ValidationException::withMessages(['profesionales' => 'La cuenta seleccionada no corresponde al profesional.']);
+            }
+            DB::table('estancia_profesionales')->insert(['id' => (string) Str::uuid(), 'estancia_atencion_id' => $estanciaId, 'profesional_id' => $registro?->id, 'usuario_id' => $registro?->usuario_id ?? ($profesional['usuario_id'] ?? null), 'rol' => $profesional['rol'], 'asignado_en' => now(), 'created_at' => now(), 'updated_at' => now()]);
         }
     }
 
@@ -92,6 +100,14 @@ class EstanciasAtencionController
     {
         $estancia->datos_area = json_decode($estancia->datos_area ?? 'null', true);
         $estancia->profesionales = DB::table('estancia_profesionales')->where('estancia_atencion_id', $estancia->id)->whereNull('retirado_en')->get();
+
+        $ids = $estancia->profesionales->pluck('profesional_id')->filter();
+        if ($ids->isNotEmpty()) {
+            $catalogo = DB::connection('usuarios')->table('profesionales')->whereIn('id', $ids)->get(['id', 'nombres', 'apellidos', 'tipo', 'matricula'])->keyBy('id');
+            $estancia->profesionales->each(function ($asignacion) use ($catalogo): void {
+                $asignacion->profesional = $catalogo->get($asignacion->profesional_id);
+            });
+        }
 
         return $estancia;
     }

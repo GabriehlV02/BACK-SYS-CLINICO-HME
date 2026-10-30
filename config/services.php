@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'contable' => [
+        'url' => env('CONTABLE_API_URL'),
+        'token' => env('CLINICO_INTEGRACION_TOKEN'),
+    ],
 
     /*
     |--------------------------------------------------------------------------
