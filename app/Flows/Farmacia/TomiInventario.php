@@ -7,7 +7,37 @@ use Illuminate\Support\Facades\DB;
 
 class TomiInventario
 {
-    private const PALABRAS_IGNORADAS = ['cuanto', 'cuantos', 'cuantas', 'hay', 'tengo', 'tenemos', 'stock', 'disponible', 'disponibilidad', 'producto', 'productos', 'medicamento', 'medicamentos', 'buscar', 'buscame', 'busca', 'encuentra', 'encontrar', 'item', 'items', 'vender', 'venta', 'vendere', 'vendamos', 'vencimiento', 'vence', 'vencen', 'ubicacion', 'donde', 'esta', 'estan', 'sucursal', 'almacen', 'estante', 'por', 'favor', 'debo', 'necesito', 'quiero', 'para', 'el', 'la', 'los', 'las', 'un', 'una', 'en', 'del', 'al', 'me', 'mi', 'primero', 'primera', 'mejor', 'decir', 'indicar', 'recomienda', 'recomendacion', 'prioriza', 'priorizar', 'proximo', 'proxima', 'proximos', 'proximas', 'fecha', 'lote', 'lotes', 'unidades', 'unidad', 'cajas'];
+    private const PALABRAS_IGNORADAS = ['cuanto', 'cuantos', 'cuantas', 'hay', 'tengo', 'tenemos', 'stock', 'disponible', 'disponibilidad', 'producto', 'productos', 'medicamento', 'medicamentos', 'buscar', 'buscame', 'busca', 'encuentra', 'encontrar', 'item', 'items', 'vender', 'venta', 'vendere', 'vendamos', 'vencimiento', 'vence', 'vencen', 'ubicacion', 'donde', 'esta', 'estan', 'sucursal', 'almacen', 'estante', 'por', 'favor', 'debo', 'necesito', 'quiero', 'para', 'el', 'la', 'los', 'las', 'un', 'una', 'en', 'de', 'del', 'al', 'me', 'mi', 'primero', 'primera', 'mejor', 'decir', 'indicar', 'recomienda', 'recomendacion', 'prioriza', 'priorizar', 'proximo', 'proxima', 'proximos', 'proximas', 'fecha', 'lote', 'lotes', 'unidades', 'unidad', 'cajas', 'codigo', 'clave', 'marca'];
+
+    public function esConsultaInventario(string $consulta): bool
+    {
+        $normalizada = $this->normalizar($consulta);
+        if (preg_match('/\b(?:stock|inventario|existencias?|disponibilidad|disponible|sucursal|almacen|estante|repisa|vencimiento|vencen|lote|cantidad|medicamento|farmacia|producto|codigo|clave|vender|despachar)\b|\b[a-z]{2,}\d{3,}\b/u', $normalizada)) {
+            return true;
+        }
+
+        $terminos = array_values(array_unique(array_filter(preg_split('/\s+/', $normalizada) ?: [], fn (string $termino): bool => mb_strlen($termino) > 2 && ! in_array($termino, self::PALABRAS_IGNORADAS, true) && ! ctype_digit($termino))));
+        if ($terminos === []) {
+            return false;
+        }
+
+        $db = DB::connection('usuarios');
+        if (! $db->getSchemaBuilder()->hasTable('items_inventario')) {
+            return false;
+        }
+
+        return $db->table('items_inventario as i')->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')
+            ->where('i.estado', 'ACTIVO')->where('g.estado', 'ACTIVO')
+            ->where(function ($builder) use ($terminos): void {
+                foreach ($terminos as $termino) {
+                    $builder->orWhere(function ($campos) use ($termino): void {
+                        $campos->whereLike('i.nombre_comercial', '%'.$termino.'%')->orWhereLike('i.marca', '%'.$termino.'%')
+                            ->orWhereLike('i.codigo_barras', '%'.$termino.'%')->orWhereLike('i.clave', '%'.$termino.'%')
+                            ->orWhereLike('g.nombre', '%'.$termino.'%');
+                    });
+                }
+            })->exists();
+    }
 
     public function responder(string $consulta): string
     {
@@ -16,8 +46,11 @@ class TomiInventario
         if (preg_match('/\b(hola|buenas|buenos|buenas tardes|buenas noches|quien eres|como te llamas)\b/u', $intenciones)) {
             return '¡Hola! Soy TOMI, tu asistente de inventario de farmacia. Puedo ayudarte a revisar existencias, sucursales, ubicaciones y vencimientos. ¿Qué producto buscas?';
         }
-        preg_match('/\b(\d{1,6})\s*(?:unidades?|uds?|piezas?)?\b/u', $consulta, $coincidenciaCantidad);
-        $solicitado = isset($coincidenciaCantidad[1]) ? (float) $coincidenciaCantidad[1] : null;
+        $solicitado = null;
+        if (preg_match('/\b(\d{1,6}(?:[.,]\d+)?)\s*(?:unidades?|uds?|piezas?|tabletas?|comprimidos?|cajas?)\b/iu', $consulta, $coincidenciaCantidad)
+            || preg_match('/\b(?:vender|despachar|entregar|reservar|separar)\s+(\d{1,6}(?:[.,]\d+)?)\b/iu', $consulta, $coincidenciaCantidad)) {
+            $solicitado = (float) str_replace(',', '.', $coincidenciaCantidad[1]);
+        }
         $consultaNormalizada = $this->normalizar($consulta);
         $terminos = array_values(array_unique(array_filter(preg_split('/\s+/', $consultaNormalizada) ?: [], fn (string $termino): bool => mb_strlen($termino) > 1 && ! in_array($termino, self::PALABRAS_IGNORADAS, true) && ! ctype_digit($termino))));
 
@@ -55,10 +88,10 @@ class TomiInventario
 
         if ($terminosProducto !== []) {
             $query->where(function ($builder) use ($terminosProducto): void {
-                foreach ($terminosProducto as $indice => $termino) {
-                    $metodo = $indice === 0 ? 'where' : 'orWhere';
-                    $builder->{$metodo}(function ($campos) use ($termino): void {
+                foreach ($terminosProducto as $termino) {
+                    $builder->where(function ($campos) use ($termino): void {
                         $campos->whereLike('i.nombre_comercial', '%'.$termino.'%')->orWhereLike('i.marca', '%'.$termino.'%')
+                            ->orWhereLike('i.codigo_barras', '%'.$termino.'%')->orWhereLike('i.clave', '%'.$termino.'%')
                             ->orWhereLike('i.presentacion', '%'.$termino.'%')->orWhereLike('g.nombre', '%'.$termino.'%');
                     });
                 }
@@ -84,7 +117,8 @@ class TomiInventario
         $vigentes = $lotes->filter(fn (object $lote): bool => ! $lote->vencimiento || $lote->vencimiento >= now()->toDateString())
             ->filter(fn (object $lote): bool => (float) $lote->cantidad > 0)
             ->sortBy(fn (object $lote): string => $lote->vencimiento ?: '9999-12-31');
-        $productos = $vigentes->groupBy(fn (object $lote): string => $lote->producto_base_id.'|'.$lote->presentacion);
+        $productos = $vigentes->groupBy('item_id');
+        $gruposProducto = $vigentes->groupBy(fn (object $lote): string => $lote->producto_base_id.'|'.$lote->presentacion);
         $respuesta = [];
 
         foreach ($productos as $producto) {
@@ -98,12 +132,13 @@ class TomiInventario
                 $respuesta[] = '• '.$existenciasAlmacen->first()->sucursal.' / '.$existenciasAlmacen->first()->almacen.' — '.$ubicacion.' — '.$this->formatearCantidad((float) $existenciasAlmacen->sum('cantidad')).' unidades.';
             }
 
-            if ($solicitado !== null) {
+        }
+
+        if ($solicitado !== null) {
+            if ($gruposProducto->count() === 1) {
                 $restante = $solicitado;
-                foreach ($producto as $lote) {
-                    if ($restante <= 0) {
-                        break;
-                    }
+                foreach ($gruposProducto->first() as $lote) {
+                    if ($restante <= 0) break;
                     $asignado = min($restante, (float) $lote->cantidad);
                     $vence = $lote->vencimiento ?: 'sin fecha de vencimiento registrada';
                     $ubicacion = $lote->ubicacion ?: 'ubicación sin registrar';
@@ -113,6 +148,8 @@ class TomiInventario
                 if ($restante > 0) {
                     $respuesta[] = 'Faltarían '.$this->formatearCantidad($restante).' unidades para completar las '.$this->formatearCantidad($solicitado).' solicitadas.';
                 }
+            } else {
+                $respuesta[] = 'Encontré más de una presentación o producto base. Confirma cuál necesitas antes de calcular qué lotes despachar.';
             }
         }
 
@@ -120,8 +157,8 @@ class TomiInventario
             $respuesta[] = 'Hay '.$vencidas->count().' registro(s) con vencimiento pasado; no los incluyo en la recomendación de venta.';
         }
 
-        if ($productos->count() > 1) {
-            $respuesta[] = 'Encontré distintas presentaciones o productos base. No mezclé sus cantidades; confirma cuál presentación necesitas.';
+        if ($gruposProducto->count() > 1 && $solicitado === null) {
+            $respuesta[] = 'Encontré varias marcas o presentaciones. Mantuve sus existencias separadas; si necesitas una marca concreta, indícala.';
         }
 
         return implode("\n", $respuesta);
