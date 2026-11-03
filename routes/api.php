@@ -21,12 +21,16 @@ use App\Flows\Pacientes\Http\Controllers\EstudiosController;
 use App\Flows\Pacientes\Http\Controllers\ListarPacientesController;
 use App\Flows\Pacientes\Http\Controllers\RegistrarPacienteController;
 use App\Flows\Usuarios\Http\AlmacenesCajasController;
+use App\Flows\Usuarios\Http\AuditoriaAtencionController;
+use App\Flows\Usuarios\Http\AuditoriaUsuariosController;
+use App\Flows\Usuarios\Http\AuditoriaVentasController;
 use App\Flows\Usuarios\Http\RolesController;
 use App\Flows\Usuarios\Http\UsuariosController;
 use App\Http\Controllers\CitasController;
 use App\Http\Controllers\PacienteFichaController;
 use App\Http\Controllers\ProfesionalesCompartidosController;
 use App\Http\Controllers\VincularClienteContableController;
+use App\Http\Middleware\RegistrarAuditoriaAccion;
 use App\Http\Middleware\VerificarIntegracionContable;
 use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Support\Facades\Route;
@@ -39,7 +43,7 @@ Route::middleware(VerificarIntegracionContable::class)->prefix('integraciones/co
 Route::post('/recuperar-contrasena', SolicitarRecuperacionContrasenaController::class)->middleware('throttle:recuperar-contrasena');
 Route::post('/restablecer-contrasena', RestablecerContrasenaController::class)->middleware('throttle:restablecer-contrasena');
 
-Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
+Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class])->group(function (): void {
     Route::get('/v1/profesionales', ProfesionalesCompartidosController::class);
     Route::get('/citas', [CitasController::class, 'index']);
     Route::post('/citas', [CitasController::class, 'store']);
@@ -61,6 +65,9 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
     Route::patch('/farmacia/tomi/inventarios/{inventario}/detalles/{detalle}', [FarmaciaInventariosController::class, 'contar'])->whereNumber('inventario')->whereNumber('detalle');
     Route::post('/farmacia/tomi/inventarios/{inventario}/finalizar', [FarmaciaInventariosController::class, 'finalizar'])->whereNumber('inventario');
     Route::post('/cambiar-contrasena', CambiarContrasenaController::class);
+    Route::get('/auditorias/usuarios/{usuario}/eventos', [AuditoriaUsuariosController::class, 'index'])->whereUuid('usuario');
+    Route::get('/auditorias/ventas', [AuditoriaVentasController::class, 'index']);
+    Route::get('/auditorias/atencion', [AuditoriaAtencionController::class, 'index']);
 
     Route::prefix('emergencias')->controller(EmergenciasController::class)->group(function (): void {
         Route::get('/', 'index');

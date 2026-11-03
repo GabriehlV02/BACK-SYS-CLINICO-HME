@@ -21,7 +21,13 @@ class UsuariosController
         }
         if (! empty($datos['buscar'])) {
             $buscar = '%'.$datos['buscar'].'%';
-            $usuarios->where(fn ($q) => $q->whereLike('nombres', $buscar)->orWhereLike('apellidos', $buscar)->orWhereLike('usuario', $buscar));
+            $usuarios->where(fn ($q) => $q->whereLike('nombres', $buscar)
+                ->orWhereLike('apellido_paterno', $buscar)
+                ->orWhereLike('apellido_materno', $buscar)
+                ->orWhereLike('apellidos', $buscar)
+                ->orWhereLike('usuario', $buscar)
+                ->orWhereLike('ci', $buscar)
+                ->orWhereLike('correo', $buscar));
         }
         $resultado = $usuarios->orderBy('nombres')->orderBy('id')->paginate($datos['por_pagina'] ?? 20);
         $roles = $acceso->conexion()->table('rol_usuario as ru')->join('roles as r', 'r.id', '=', 'ru.rol_id')->whereIn('ru.usuario_id', $resultado->getCollection()->pluck('id'))->get(['ru.usuario_id', 'r.nombre'])->groupBy('usuario_id');
