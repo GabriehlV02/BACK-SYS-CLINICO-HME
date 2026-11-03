@@ -3,6 +3,7 @@
 namespace App\Flows\Farmacia\Http;
 
 use App\Flows\Autenticacion\AccesoCompartido;
+use App\Flows\Farmacia\FarmaciaAlmaceneroConversacion;
 use App\Flows\Farmacia\FarmaciaInventarioConversacion;
 use App\Flows\Farmacia\TomiInventario;
 use Illuminate\Http\Request;
@@ -41,6 +42,10 @@ class TomiChatController
         }
 
         $consulta = $messages[array_key_last($messages)]['content'];
+        $almacenero = app(FarmaciaAlmaceneroConversacion::class)->responder($consulta, $request->user(), app(AccesoCompartido::class));
+        if ($almacenero !== null) {
+            return response()->json(['message' => $almacenero]);
+        }
         $flujoInventario = app(FarmaciaInventarioConversacion::class);
         $inventario = $flujoInventario->responder($consulta, $request->user(), app(AccesoCompartido::class));
         if ($inventario !== null) {

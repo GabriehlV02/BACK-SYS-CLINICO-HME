@@ -52,6 +52,7 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
     Route::get('/farmacia/tomi/sucursales', [FarmaciaSucursalesController::class, 'index']);
     Route::get('/farmacia/tomi/sucursales/{sucursal}', [FarmaciaSucursalesController::class, 'show'])->whereNumber('sucursal');
     Route::put('/farmacia/tomi/sucursales/{sucursal}', [FarmaciaSucursalesController::class, 'guardar'])->whereNumber('sucursal');
+    Route::post('/farmacia/tomi/sucursales/{sucursal}/ubicaciones', [FarmaciaSucursalesController::class, 'asignarItem'])->whereNumber('sucursal');
     Route::get('/farmacia/tomi/inventarios', [FarmaciaInventariosController::class, 'index']);
     Route::get('/farmacia/tomi/inventario-activo', [FarmaciaInventariosController::class, 'activo']);
     Route::post('/farmacia/tomi/inventarios', [FarmaciaInventariosController::class, 'store']);
