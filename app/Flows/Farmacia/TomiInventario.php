@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 
 class TomiInventario
 {
-    private const PALABRAS_IGNORADAS = ['cuanto', 'cuantos', 'cuantas', 'hay', 'tengo', 'tenemos', 'stock', 'disponible', 'disponibilidad', 'producto', 'productos', 'medicamento', 'medicamentos', 'buscar', 'buscame', 'busca', 'encuentra', 'encontrar', 'item', 'items', 'vender', 'venta', 'vendere', 'vendamos', 'vencimiento', 'vence', 'vencen', 'ubicacion', 'donde', 'esta', 'estan', 'sucursal', 'almacen', 'estante', 'por', 'favor', 'debo', 'necesito', 'quiero', 'para', 'el', 'la', 'los', 'las', 'un', 'una', 'en', 'de', 'del', 'al', 'me', 'mi', 'primero', 'primera', 'mejor', 'decir', 'indicar', 'recomienda', 'recomendacion', 'prioriza', 'priorizar', 'proximo', 'proxima', 'proximos', 'proximas', 'fecha', 'lote', 'lotes', 'unidades', 'unidad', 'cajas', 'codigo', 'clave', 'marca'];
+    private const PALABRAS_IGNORADAS = ['hola', 'buenas', 'buenos', 'saludos', 'cuanto', 'cuantos', 'cuantas', 'hay', 'tengo', 'tenemos', 'stock', 'disponible', 'disponibilidad', 'producto', 'productos', 'medicamento', 'medicamentos', 'buscar', 'buscame', 'busca', 'encuentra', 'encontrar', 'item', 'items', 'vender', 'venta', 'vendere', 'vendamos', 'vencimiento', 'vence', 'vencen', 'ubicacion', 'donde', 'esta', 'estan', 'sucursal', 'almacen', 'estante', 'por', 'favor', 'debo', 'necesito', 'quiero', 'para', 'el', 'la', 'los', 'las', 'un', 'una', 'en', 'de', 'del', 'al', 'me', 'mi', 'primero', 'primera', 'mejor', 'decir', 'indicar', 'recomienda', 'recomendacion', 'prioriza', 'priorizar', 'proximo', 'proxima', 'proximos', 'proximas', 'fecha', 'lote', 'lotes', 'unidades', 'unidad', 'cajas', 'codigo', 'clave', 'marca'];
 
     public function esConsultaInventario(string $consulta): bool
     {
@@ -43,7 +43,8 @@ class TomiInventario
     {
         $consulta = trim($consulta);
         $intenciones = $this->normalizar($consulta);
-        if (preg_match('/\b(hola|buenas|buenos|buenas tardes|buenas noches|quien eres|como te llamas)\b/u', $intenciones)) {
+        if (preg_match('/\b(hola|buenas|buenos|buenas tardes|buenas noches|quien eres|como te llamas)\b/u', $intenciones)
+            && ! preg_match('/\b(stock|inventario|existencias?|disponibilidad|disponible|sucursal|almacen|vencimiento|lote|cantidad|medicamento|farmacia|producto|codigo|clave|vender|despachar)\b/u', $intenciones)) {
             return '¡Hola! Soy TOMI, tu asistente de inventario de farmacia. Puedo ayudarte a revisar existencias, sucursales, ubicaciones y vencimientos. ¿Qué producto buscas?';
         }
         $solicitado = null;
@@ -183,7 +184,9 @@ class TomiInventario
             return 'Encontré estos productos en el catálogo, pero no tienen existencias registradas en los almacenes a los que tienes acceso: '.$lista.'.';
         }
 
-        return 'No encontré «'.$consulta.'» en el inventario visible. Prueba con el nombre genérico o la marca; también puedo buscar por una palabra clave.';
+        $busqueda = $terminosProducto === [] ? $consulta : implode(' ', $terminosProducto);
+
+        return 'No encuentro "'.$busqueda.'" en los almacenes a los que tienes acceso. Puedes intentar con el nombre genérico, la marca, el código o una parte del nombre. Ejemplos: "Busca paracetamol", "Hay ibuprofeno?" o "Stock de amoxicilina".';
     }
 
     private function normalizar(string $texto): string

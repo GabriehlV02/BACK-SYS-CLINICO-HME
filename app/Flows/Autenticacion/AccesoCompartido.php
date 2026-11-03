@@ -34,6 +34,12 @@ class AccesoCompartido
 
     public function permisos(string $usuarioId): array
     {
+        if ($this->esAdministrador($usuarioId)) {
+            return $this->conexion()->table('permisos as p')->join('sistemas as s', 's.id', '=', 'p.sistema_id')
+                ->whereIn('s.codigo', ['CLINICO', 'ESTUDIOS'])->where('p.activo', true)->where('s.activo', true)
+                ->orderBy('p.codigo')->pluck('p.codigo')->all();
+        }
+
         return $this->conexion()->table('permisos as p')->join('permiso_rol as pr', 'pr.permiso_id', '=', 'p.id')
             ->join('sistemas as s', 's.id', '=', 'p.sistema_id')
             ->whereIn('pr.rol_id', $this->roles($usuarioId)->select('r.id'))
@@ -87,7 +93,7 @@ class AccesoCompartido
     {
         $usuario = request()->user();
         abort_unless($usuario, 401);
-        if ($this->roles($usuario->id)->where('r.codigo', 'ADMINISTRADOR')->exists()) {
+        if ($this->esAdministrador($usuario->id)) {
             return null;
         }
 
@@ -99,5 +105,16 @@ class AccesoCompartido
             })
             ->where('au.usuario_id', $usuario->id)->where('a.activo', true)->where('s.activo', true)
             ->pluck('a.id')->map(fn ($id): int => (int) $id)->all();
+    }
+
+    /** El administrador del sistema opera todas las áreas y sucursales. */
+    public function esAdministrador(string $usuarioId): bool
+    {
+        return $this->conexion()->table('roles as r')->join('rol_usuario as ru', 'ru.rol_id', '=', 'r.id')
+            ->where('ru.usuario_id', $usuarioId)->where('r.activo', true)
+            ->where(function (Builder $query): void {
+                $query->whereIn('r.codigo', ['ADMINISTRADOR', 'ADMIN', 'ADMINISTRADOR_SISTEMA'])
+                    ->orWhereRaw("UPPER(COALESCE(r.nombre, '')) IN ('ADMINISTRADOR', 'ADMINISTRADOR DEL SISTEMA')");
+            })->exists();
     }
 }

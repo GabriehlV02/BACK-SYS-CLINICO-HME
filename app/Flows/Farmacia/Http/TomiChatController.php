@@ -72,7 +72,7 @@ class TomiChatController
     {
         $apiKey = trim((string) config('services.openai.api_key'));
         if ($apiKey === '' || ! $modelo) {
-            return response()->json(['message' => 'Puedo ayudarte con el catálogo, las existencias y la organización del almacén. Para conversar con TOMI, el servicio de IA necesita configuración en el backend.'], 503);
+            return response()->json(['message' => 'Estoy en modo local y puedo responder consultas de inventario, catálogo, sucursales, ubicaciones y vencimientos. Prueba con una pregunta concreta: "Hay paracetamol en stock?" o "Qué productos vencen pronto?".']);
         }
 
         $instrucciones = 'Eres TOMI, asistente de farmacia amigable, claro y conversacional en español latino. Ayuda con saludos y explica cómo usar las funciones de farmacia. En esta solicitud no recibiste datos actuales del inventario: nunca inventes existencias, marcas disponibles, precios, vencimientos ni ubicaciones; invita a consultar el producto en el sistema. No diagnostiques, prescribas, recomiendes dosis, interacciones ni sustituciones; deriva esas preguntas al profesional farmacéutico. No afirmes haber ejecutado acciones ni modifiques registros. No solicites ni repitas datos de pacientes.';

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Flows\Atenciones\ProfesionalesCompartidos;
+use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -14,9 +15,23 @@ use Illuminate\Validation\ValidationException;
 
 class CitasController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request, AccesoCompartido $acceso): JsonResponse
     {
-        return response()->json($this->consulta()->orderBy('citas.fecha')->orderBy('citas.hora')->get()->map(fn ($cita) => $this->presentar($cita)));
+        $consulta = $this->consulta();
+        $usuario = $request->user();
+
+        // Un médico solo puede conocer la agenda vinculada a su propio perfil.
+        // Recepción y triaje no tienen perfil médico y conservan la agenda operativa.
+        if ($usuario && ! $acceso->esAdministrador($usuario->id)) {
+            $profesionalId = DB::connection('usuarios')->table('profesionales')
+                ->where('usuario_id', $usuario->id)->where('activo', true)->where('tipo', 'Médico/a')->value('id');
+
+            if ($profesionalId) {
+                $consulta->where('citas.profesional_id', $profesionalId);
+            }
+        }
+
+        return response()->json($consulta->orderBy('citas.fecha')->orderBy('citas.hora')->get()->map(fn ($cita) => $this->presentar($cita)));
     }
 
     public function store(Request $request): JsonResponse
