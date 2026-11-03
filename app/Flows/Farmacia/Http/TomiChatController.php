@@ -85,9 +85,11 @@ class TomiChatController
             'role' => $mensaje['role'],
             'content' => mb_substr(trim($mensaje['content']), 0, 1200),
         ], array_slice($messages, -6));
+        $caBundle = trim((string) config('services.openai.ca_bundle'));
+        $opcionesTls = $caBundle !== '' && is_file($caBundle) ? ['verify' => $caBundle] : ['verify' => true];
 
         try {
-            $respuesta = Http::acceptJson()->withToken($apiKey)->connectTimeout(5)->timeout(25)->post('https://api.openai.com/v1/responses', [
+            $respuesta = Http::acceptJson()->withOptions($opcionesTls)->withToken($apiKey)->connectTimeout(5)->timeout(25)->post('https://api.openai.com/v1/responses', [
                 'model' => $modelo,
                 'instructions' => $instrucciones,
                 'input' => $contexto,
