@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-6-luna'),
+        'ca_bundle' => env('OPENAI_CA_BUNDLE'),
+    ],
+
     'contable' => [
         'url' => env('CONTABLE_API_URL'),
         'token' => env('CLINICO_INTEGRACION_TOKEN'),

@@ -9,7 +9,10 @@ use App\Flows\Autenticacion\Http\SolicitarRecuperacionContrasenaController;
 use App\Flows\Emergencias\Http\EmergenciasController;
 use App\Flows\Farmacia\Http\CatalogoCompartidoController;
 use App\Flows\Farmacia\Http\FarmaciaAlmacenController;
+use App\Flows\Farmacia\Http\FarmaciaInventariosController;
+use App\Flows\Farmacia\Http\FarmaciaSucursalesController;
 use App\Flows\Farmacia\Http\ReporteVentasFarmaciaController;
+use App\Flows\Farmacia\Http\TomiChatController;
 use App\Flows\Imagenologia\Http\Controllers\OrthancController;
 use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController;
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
@@ -44,6 +47,18 @@ Route::middleware(VerificarSesionCompartida::class)->group(function (): void {
     Route::get('/session', [SesionCompartidaController::class, 'show']);
     Route::post('/logout', [SesionCompartidaController::class, 'destroy']);
     Route::get('/catalogo', CatalogoCompartidoController::class);
+    Route::get('/farmacia/tomi/estado', [TomiChatController::class, 'estado']);
+    Route::post('/farmacia/tomi/chat', TomiChatController::class)->middleware('throttle:20,1');
+    Route::get('/farmacia/tomi/sucursales', [FarmaciaSucursalesController::class, 'index']);
+    Route::get('/farmacia/tomi/sucursales/{sucursal}', [FarmaciaSucursalesController::class, 'show'])->whereNumber('sucursal');
+    Route::put('/farmacia/tomi/sucursales/{sucursal}', [FarmaciaSucursalesController::class, 'guardar'])->whereNumber('sucursal');
+    Route::get('/farmacia/tomi/inventarios', [FarmaciaInventariosController::class, 'index']);
+    Route::get('/farmacia/tomi/inventario-activo', [FarmaciaInventariosController::class, 'activo']);
+    Route::post('/farmacia/tomi/inventarios', [FarmaciaInventariosController::class, 'store']);
+    Route::get('/farmacia/tomi/inventarios/{inventario}', [FarmaciaInventariosController::class, 'show'])->whereNumber('inventario');
+    Route::get('/farmacia/tomi/inventarios/{inventario}/excel', [FarmaciaInventariosController::class, 'excel'])->whereNumber('inventario');
+    Route::patch('/farmacia/tomi/inventarios/{inventario}/detalles/{detalle}', [FarmaciaInventariosController::class, 'contar'])->whereNumber('inventario')->whereNumber('detalle');
+    Route::post('/farmacia/tomi/inventarios/{inventario}/finalizar', [FarmaciaInventariosController::class, 'finalizar'])->whereNumber('inventario');
     Route::post('/cambiar-contrasena', CambiarContrasenaController::class);
 
     Route::prefix('emergencias')->controller(EmergenciasController::class)->group(function (): void {
