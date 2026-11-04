@@ -90,7 +90,10 @@ class VinculosPacientesTest extends TestCase
         $paciente = $this->paciente();
         $usuarioId = '00000000-0000-4000-8000-000000000001';
         $this->actingAs(new GenericUser(['id' => $usuarioId]));
-        $this->mock(AccesoCompartido::class)->shouldReceive('exigir')->once()->with($usuarioId, 'VENTAS_REGISTRAR');
+        $this->mock(AccesoCompartido::class, function ($mock) use ($usuarioId): void {
+            $mock->shouldReceive('esAdministrador')->once()->with($usuarioId)->andReturnFalse();
+            $mock->shouldReceive('exigir')->once()->with($usuarioId, 'VENTAS_REGISTRAR');
+        });
         config(['services.contable.url' => 'http://contable.test', 'services.contable.token' => str_repeat('x', 48)]);
         Http::preventStrayRequests();
         Http::fake(['contable.test/api/integraciones/clinico/clientes' => Http::response(['data' => ['id' => 'cliente-compartido', 'paciente_id' => $paciente['id']]], 201)]);

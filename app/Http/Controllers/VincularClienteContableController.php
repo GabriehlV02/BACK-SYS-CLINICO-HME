@@ -13,7 +13,12 @@ class VincularClienteContableController extends Controller
 {
     public function __invoke(Request $request, Paciente $paciente): JsonResponse
     {
-        app(AccesoCompartido::class)->exigir($request->user()->id, 'VENTAS_REGISTRAR');
+        $acceso = app(AccesoCompartido::class);
+        // El administrador clínico puede vincular pacientes al cobro. Para los
+        // demás perfiles se conserva la exigencia explícita de ventas.
+        if (! $acceso->esAdministrador($request->user()->id)) {
+            $acceso->exigir($request->user()->id, 'VENTAS_REGISTRAR');
+        }
         $url = config('services.contable.url');
         $token = config('services.contable.token');
         abort_unless($url && $token, 503, 'La conexión con el contable no está configurada.');
