@@ -19,6 +19,7 @@ class ListarPacientesController
         ]);
 
         return response()->json(Paciente::query()
+            ->with(['registrosAdmision' => fn ($query) => $query->latest('created_at'), 'responsables' => fn ($query) => $query->where('activo', true)])
             ->select('pacientes.*')
             ->selectSub(DB::table('estudios')->selectRaw('count(*)')->whereColumn('estudios.paciente_id', 'pacientes.id')->where('tipo', 'LABORATORIO'), 'laboratorios_count')
             ->selectSub(DB::table('estudios')->selectRaw('count(*)')->whereColumn('estudios.paciente_id', 'pacientes.id')->where('tipo', '!=', 'LABORATORIO'), 'imagenes_count')
