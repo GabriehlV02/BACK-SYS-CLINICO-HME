@@ -17,7 +17,7 @@ class EstudiosController
             ->orderBy('estudios.solicitado_en')->get(['estudios.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci'])]);
     }
 
-    private const TIPOS = ['LABORATORIO', 'TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA'];
+    private const TIPOS = ['LABORATORIO', 'TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'];
 
     private const ESTADOS = ['SOLICITADO', 'EN_PROCESO', 'REALIZADO', 'INFORMADO', 'ENTREGADO', 'CANCELADO'];
 
