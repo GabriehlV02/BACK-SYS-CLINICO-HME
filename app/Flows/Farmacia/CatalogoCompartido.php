@@ -14,6 +14,10 @@ class CatalogoCompartido
         $existencias = $db->table('existencias_lote as e')->join('lotes_items as l', 'l.id', '=', 'e.lote_id')
             ->when($almacenes !== null, fn ($q) => $q->whereIn('e.almacen_id', $almacenes))
             ->selectRaw('l.item_id, SUM(e.cantidad) as cantidad')->groupBy('l.item_id')->pluck('cantidad', 'item_id');
+        $vencimientos = $db->table('existencias_lote as e')->join('lotes_items as l', 'l.id', '=', 'e.lote_id')
+            ->where('e.cantidad', '>', 0)->whereNotNull('l.vencimiento')
+            ->when($almacenes !== null, fn ($q) => $q->whereIn('e.almacen_id', $almacenes))
+            ->selectRaw('l.item_id, MIN(l.vencimiento) as fecha_vencimiento')->groupBy('l.item_id')->pluck('fecha_vencimiento', 'item_id');
         $productos = $db->table('items_inventario as i')->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')
             ->join('tipos_inventario as t', 't.id', '=', 'g.tipo_id')->join('unidades_inventario as u', 'u.id', '=', 'i.unidad_id')
             ->leftJoin('categorias_inventario as c', 'c.id', '=', 'g.categoria_id')
@@ -24,7 +28,8 @@ class CatalogoCompartido
             ->map(fn (object $i): array => ['id' => 'item-'.$i->id, 'contableId' => $i->id, 'origen' => 'CONTABLE', 'codigo' => 'ITM-'.str_pad((string) $i->id, 6, '0', STR_PAD_LEFT),
                 'nombre' => $i->nombre_comercial, 'generico' => $i->generico, 'marca' => $i->marca, 'presentacion' => $i->presentacion,
                 'tipo' => strtolower($i->tipo_base), 'unidad' => $i->unidad, 'categoria' => $i->categoria ?? 'Sin categoría',
-                'precio' => (float) $i->precio_1, 'precio1' => $i->precio_1, 'precio2' => $i->precio_2, 'precio3' => $i->precio_3, 'stock' => (float) ($existencias[$i->id] ?? 0)])->all();
+                'precio' => (float) $i->precio_1, 'precio1' => $i->precio_1, 'precio2' => $i->precio_2, 'precio3' => $i->precio_3,
+                'stock' => (float) ($existencias[$i->id] ?? 0), 'fechaVencimiento' => $vencimientos[$i->id] ?? null])->all();
         $servicios = $db->table('servicios as s')->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
             ->join('unidades_inventario as u', 'u.id', '=', 's.unidad_id')->leftJoin('categorias_inventario as c', 'c.id', '=', 's.categoria_id')
             ->where('s.estado', 'ACTIVO')->where('t.activo', true)->where('u.activo', true)->orderBy('s.nombre')->orderBy('s.id')
