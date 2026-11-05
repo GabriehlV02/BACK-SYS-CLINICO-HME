@@ -5,6 +5,7 @@ namespace App\Flows\Farmacia\Http;
 use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ZipArchive;
 
@@ -21,7 +22,16 @@ class FarmaciaInventariosController
             ->whereIn('f.estado', ['ESPERANDO_ALMACEN', 'EN_CURSO'])->orderByDesc('f.id')
             ->first(['f.id', 'f.sucursal_id', 'f.almacen_id', 'f.estado', 'f.iniciado_en', 'f.finalizado_en', 's.nombre as sucursal', 'a.nombre as almacen']);
 
-        return response()->json(['data' => $inventario ? $this->resumen($db, $inventario) : null]);
+        $resumen = $inventario ? $this->resumen($db, $inventario) : null;
+        if ($inventario && $inventario->estado === 'EN_CURSO') {
+            $resumen['ejemplos'] = $db->table('farmacia_inventario_detalles as d')->join('items_inventario as i', 'i.id', '=', 'd.item_id')
+                ->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')->where('d.inventario_id', $inventario->id)->whereNull('d.cantidad_contada')
+                ->orderBy('g.nombre')->orderBy('i.nombre_comercial')->limit(3)
+                ->get(['i.id', 'i.codigo_barras', 'i.clave', 'i.nombre_comercial', 'g.nombre as generico'])
+                ->map(fn (object $item): array => ['codigo' => $item->codigo_barras ?: ($item->clave ?: 'ITM-'.str_pad((string) $item->id, 6, '0', STR_PAD_LEFT)), 'nombre' => $item->nombre_comercial ?: $item->generico]);
+        }
+
+        return response()->json(['data' => $resumen]);
     }
 
     public function index(Request $request, AccesoCompartido $acceso): JsonResponse
@@ -112,9 +122,15 @@ class FarmaciaInventariosController
         $datos = $request->validate(['cantidad' => ['required', 'numeric', 'min:0', 'max:999999999999']]);
         $registro = $this->registro($inventario, $acceso);
         abort_unless($registro->estado === 'EN_CURSO', 409, 'Este inventario ya fue finalizado.');
-        $actualizado = $acceso->conexion()->table('farmacia_inventario_detalles')->where('inventario_id', $inventario)->where('id', $detalle)
+        $db = $acceso->conexion();
+        $detalleActual = $db->table('farmacia_inventario_detalles')->where('inventario_id', $inventario)->where('id', $detalle)->first(['item_id', 'cantidad_contada']);
+        abort_unless($detalleActual, 404);
+        $db->table('farmacia_inventario_detalles')->where('inventario_id', $inventario)->where('id', $detalle)
             ->update(['cantidad_contada' => $datos['cantidad'], 'contado_en' => now(), 'updated_at' => now()]);
-        abort_unless($actualizado, 404);
+        Log::info('Conteo de inventario de farmacia actualizado', [
+            'usuario_id' => $usuario->id, 'inventario_id' => $inventario, 'item_id' => $detalleActual->item_id,
+            'cantidad_anterior' => $detalleActual->cantidad_contada, 'cantidad_nueva' => $datos['cantidad'],
+        ]);
 
         return $this->show($inventario, $acceso);
     }

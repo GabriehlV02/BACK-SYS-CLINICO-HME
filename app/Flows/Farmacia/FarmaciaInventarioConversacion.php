@@ -3,6 +3,8 @@
 namespace App\Flows\Farmacia;
 
 use App\Flows\Autenticacion\AccesoCompartido;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class FarmaciaInventarioConversacion
 {
@@ -24,6 +26,7 @@ class FarmaciaInventarioConversacion
                 return 'No tienes un inventario en curso para cerrar.';
             }
             $acceso->exigir($usuario->id, 'INVENTARIO_GESTIONAR');
+            Cache::forget($this->claveConteoPendiente($usuario->id, $sesion->id));
             $db->table('farmacia_inventarios')->where('id', $sesion->id)->update(['estado' => 'CANCELADO', 'updated_at' => now()]);
 
             return 'Salí del modo inventario. El registro quedó cancelado y conservado en el historial.';
@@ -36,6 +39,7 @@ class FarmaciaInventarioConversacion
                 return 'No tienes un inventario activo para finalizar.';
             }
             $acceso->exigir($usuario->id, 'INVENTARIO_GESTIONAR');
+            Cache::forget($this->claveConteoPendiente($usuario->id, $sesion->id));
 
             return $this->finalizar($sesion, $db);
         }
@@ -54,7 +58,15 @@ class FarmaciaInventarioConversacion
             return $this->elegirAlmacen($sesion, $normalizado, $acceso);
         }
 
-        return $this->registrarConteo($sesion, $mensaje, $db);
+        if (preg_match('/\b(?:siguiente|proximo|proxima)\b/u', $normalizado)) {
+            $clavePendiente = $this->claveConteoPendiente($usuario->id, $sesion->id);
+            $anterior = Cache::pull($clavePendiente);
+            $prefijo = $anterior ? 'Dejé sin guardar el conteo pendiente de '.$anterior['codigo'].'. ' : '';
+
+            return $prefijo.$this->siguientePendiente($sesion, $db);
+        }
+
+        return $this->registrarConteo($sesion, $mensaje, $db, $usuario->id);
     }
 
     private function iniciar(string $mensaje, string $normalizado, object $usuario, AccesoCompartido $acceso): string
@@ -129,23 +141,30 @@ class FarmaciaInventarioConversacion
         return 'Listo, estamos en modo inventario para '.$seleccionado->sucursal.' · '.$seleccionado->almacen.'. Preparé el listado con el stock esperado y los vencimientos. Dime o dicta el código y la cantidad contada, por ejemplo: FAR002123, 10 unidades. Puedes descargar el Excel desde la subvista Inventario.';
     }
 
-    private function registrarConteo(object $sesion, string $mensaje, $db): string
+    private function registrarConteo(object $sesion, string $mensaje, $db, string $usuarioId): string
     {
-        $mensaje = preg_replace_callback('/\b([a-z]{2,})[ -]+((?:\d[ -]*){3,})\b/iu', fn (array $coincidencia): string => $coincidencia[1].preg_replace('/\D/', '', $coincidencia[2]), $mensaje) ?? $mensaje;
-        if (! preg_match('/\b([a-z]{2,}\d{3,})\b\s*(?:,|:|;|-)?\s*(\d+(?:[.,]\d+)?)\s*(?:unidades?|uds?|piezas?)?\b/iu', $mensaje, $datos)) {
-            if (preg_match('/\b([a-z]{2,}\d{3,})\b.*?\b(cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte)\s*(?:unidades?|uds?|piezas?)\b/iu', $this->normalizar($mensaje), $hablado)) {
-                $datos = [$hablado[0], $hablado[1], (string) $this->numeroHablado($hablado[2])];
-            } else {
-                return 'No te escuché. Repítelo otra vez, por favor.';
-            }
+        $clavePendiente = $this->claveConteoPendiente($usuarioId, $sesion->id);
+        $pendiente = Cache::get($clavePendiente);
+        $normalizado = $this->normalizar($mensaje);
+
+        if (preg_match('/\b(?:confirmar|confirmo|correcto|si|sí)\b/u', $normalizado)) {
+            return $pendiente ? $this->confirmarConteo($pendiente, $clavePendiente, $db, $usuarioId) : 'No hay ningún conteo pendiente de confirmación.';
+        }
+        if (preg_match('/\b(?:cancelar|cancelo|no|repetir)\b/u', $normalizado) && $pendiente) {
+            Cache::forget($clavePendiente);
+
+            return 'Entendido. No guardé ese conteo. Repite TOMI, código y cantidad cuando estés listo.';
         }
 
-        if (! isset($datos[1], $datos[2])) {
-            return 'No te escuché. Repítelo otra vez, por favor.';
+        $datos = $this->extraerConteo($mensaje);
+        if (! $datos) {
+            return $pendiente
+                ? 'Tengo pendiente confirmar '.$pendiente['codigo'].', cantidad '.$this->formatearCantidad((float) $pendiente['cantidad']).'. Di TOMI confirmar o TOMI cancelar.'
+                : 'No entendí el código o la cantidad. Repite: TOMI, código y cantidad; por ejemplo: TOMI FAR002123, 10.';
         }
 
-        $codigo = mb_strtoupper($datos[1]);
-        $cantidad = (float) str_replace(',', '.', $datos[2]);
+        [$codigo, $cantidad] = $datos;
+        $pendienteReemplazado = $pendiente && $pendiente['codigo'] !== $codigo ? $pendiente['codigo'] : null;
         $item = $db->table('items_inventario as i')->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')
             ->where('i.estado', 'ACTIVO')->where(function ($q) use ($codigo): void {
                 $q->whereRaw('UPPER(i.codigo_barras) = ?', [$codigo])->orWhereRaw('UPPER(i.clave) = ?', [$codigo]);
@@ -154,7 +173,9 @@ class FarmaciaInventarioConversacion
                 }
             })->first(['i.id', 'i.nombre_comercial', 'i.marca', 'g.nombre as generico']);
         if (! $item) {
-            return 'No te escuché. Repítelo otra vez, por favor.';
+            Cache::forget($clavePendiente);
+
+            return 'No encontré el código '.$codigo.'. Entendí ese código; repite solo el código del producto y después la cantidad.';
         }
 
         $detalle = $db->table('farmacia_inventario_detalles')->where('inventario_id', $sesion->id)->where('item_id', $item->id)->first();
@@ -166,18 +187,82 @@ class FarmaciaInventarioConversacion
             $detalle = $db->table('farmacia_inventario_detalles')->where('id', $detalleId)->first();
         }
 
-        $actualizado = $db->table('farmacia_inventario_detalles')->where('id', $detalle->id)->update([
-            'cantidad_contada' => $cantidad, 'contado_en' => now(), 'updated_at' => now(),
-        ]);
-        if (! $actualizado) {
-            return 'No te escuché. Repítelo otra vez, por favor.';
+        $nombre = trim($item->nombre_comercial ?: $item->generico);
+        $conteoPrevio = $detalle->cantidad_contada;
+        if ($conteoPrevio !== null && (float) $conteoPrevio === $cantidad) {
+            return 'Este producto ya estaba anotado con '.$this->formatearCantidad($cantidad).' unidades. No hice cambios.';
         }
 
-        $diferencia = $cantidad - (float) $detalle->cantidad_esperada;
+        $pendiente = ['detalleId' => (int) $detalle->id, 'inventarioId' => (int) $sesion->id, 'itemId' => (int) $item->id,
+            'codigo' => $codigo, 'nombre' => $nombre, 'cantidad' => $cantidad,
+            'esperada' => (float) $detalle->cantidad_esperada, 'anterior' => $conteoPrevio === null ? null : (float) $conteoPrevio];
+        Cache::put($clavePendiente, $pendiente, now()->addMinutes(3));
+
+        $reemplazo = $conteoPrevio === null ? '' : ' Ya estaba anotado en '.$this->formatearCantidad((float) $conteoPrevio).' unidades.';
+
+        $notaPendiente = $pendienteReemplazado ? ' Dejé sin guardar el conteo pendiente anterior de '.$pendienteReemplazado.'.' : '';
+
+        return 'Entendí código '.$codigo.', '.$nombre.', cantidad '.$this->formatearCantidad($cantidad).' unidades.'.$reemplazo.$notaPendiente.' ¿Confirmas? Di TOMI confirmar o TOMI cancelar.';
+    }
+
+    private function extraerConteo(string $mensaje): ?array
+    {
+        $mensaje = $this->normalizar($mensaje);
+        $palabrasNumero = 'cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte';
+        $mensaje = preg_replace_callback('/\b('.$palabrasNumero.')\b/u', fn (array $coincidencia): string => (string) $this->numeroHablado($coincidencia[1]), $mensaje) ?? $mensaje;
+        $mensaje = preg_replace_callback('/\b([a-z]{2,})[ -]+((?:\d[ -]*){3,})\b/iu', fn (array $coincidencia): string => $coincidencia[1].preg_replace('/\D/', '', $coincidencia[2]), $mensaje) ?? $mensaje;
+        if (! preg_match('/\b(?:codigo\s*)?([a-z0-9-]{3,})\b.*?\b(?:cantidad\s*)?(\d+(?:[.,]\d+)?)\s*(?:unidades?|uds?|piezas?)?\b/iu', $mensaje, $datos)) {
+            return null;
+        }
+        $codigo = mb_strtoupper(rtrim($datos[1], '-'));
+        if (! preg_match('/\d{3,}|^\d{3,}$/', $codigo)) {
+            return null;
+        }
+
+        return [$codigo, (float) str_replace(',', '.', $datos[2])];
+    }
+
+    private function confirmarConteo(array $pendiente, string $clavePendiente, $db, string $usuarioId): string
+    {
+        try {
+            $actualizado = $db->table('farmacia_inventario_detalles')->where('id', $pendiente['detalleId'])
+                ->update(['cantidad_contada' => $pendiente['cantidad'], 'contado_en' => now(), 'updated_at' => now()]);
+        } catch (\Throwable) {
+            return 'No pude guardar el conteo de '.$pendiente['codigo'].'. El dato sigue pendiente; intenta confirmar otra vez o revisa tu conexión.';
+        }
+        if (! $actualizado) {
+            return 'No pude guardar el conteo de '.$pendiente['codigo'].'. El dato sigue pendiente; intenta confirmar otra vez.';
+        }
+        Log::info('TOMI confirmó un conteo de inventario', [
+            'usuario_id' => $usuarioId, 'inventario_id' => $pendiente['inventarioId'], 'item_id' => $pendiente['itemId'],
+            'codigo' => $pendiente['codigo'], 'cantidad_anterior' => $pendiente['anterior'], 'cantidad_nueva' => $pendiente['cantidad'],
+        ]);
+        Cache::forget($clavePendiente);
+        $diferencia = $pendiente['cantidad'] - $pendiente['esperada'];
         $resultado = $diferencia < 0 ? 'faltante de '.$this->formatearCantidad(abs($diferencia)).' unidades'
             : ($diferencia > 0 ? 'sobrante de '.$this->formatearCantidad($diferencia).' unidades' : 'correcto, coincide con la cantidad esperada');
 
-        return 'Anotado. Código '.$codigo.'. '.$item->nombre_comercial.'. Cantidad anotada '.$this->formatearCantidad($cantidad).' unidades. Cantidad esperada '.$this->formatearCantidad((float) $detalle->cantidad_esperada).' unidades. Diferencia: '.$resultado.'.';
+        return 'Anotado. Código '.$pendiente['codigo'].'. '.$pendiente['nombre'].'. Cantidad anotada '.$this->formatearCantidad($pendiente['cantidad']).' unidades. Cantidad esperada '.$this->formatearCantidad($pendiente['esperada']).' unidades. Diferencia: '.$resultado.'.';
+    }
+
+    private function siguientePendiente(object $sesion, $db): string
+    {
+        $item = $db->table('farmacia_inventario_detalles as d')->join('items_inventario as i', 'i.id', '=', 'd.item_id')
+            ->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')->where('d.inventario_id', $sesion->id)
+            ->whereNull('d.cantidad_contada')->orderBy('g.nombre')->orderBy('i.nombre_comercial')
+            ->first(['i.id', 'i.codigo_barras', 'i.clave', 'i.nombre_comercial', 'g.nombre as generico', 'd.cantidad_esperada']);
+        if (! $item) {
+            return 'No quedan productos pendientes. Puedes decir TOMI finalizar inventario.';
+        }
+        $codigo = $item->codigo_barras ?: ($item->clave ?: 'ITM-'.str_pad((string) $item->id, 6, '0', STR_PAD_LEFT));
+        $nombre = $item->nombre_comercial ?: $item->generico;
+
+        return 'Siguiente pendiente: código '.$codigo.', '.$nombre.'. Cantidad esperada '.$this->formatearCantidad((float) $item->cantidad_esperada).' unidades. Di TOMI, '.$codigo.' y la cantidad contada.';
+    }
+
+    private function claveConteoPendiente(string $usuarioId, int|string $inventarioId): string
+    {
+        return 'farmacia:tomi:conteo:'.$usuarioId.':'.$inventarioId;
     }
 
     private function finalizar(object $sesion, $db): string
