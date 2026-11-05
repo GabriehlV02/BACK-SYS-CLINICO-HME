@@ -39,10 +39,21 @@ class CitasController extends Controller
         $datos = $request->validate([
             'paciente_id' => ['required', 'uuid', 'exists:pacientes,id'],
             'profesional_id' => ['sometimes', 'nullable', 'uuid'],
+            'servicio_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'doctor' => ['required', 'string', 'max:180'], 'especialidad' => ['required', 'string', 'max:120'],
             'consultorio' => ['required', 'string', 'max:100'], 'fecha' => ['required', 'date_format:Y-m-d'],
             'hora' => ['required', 'date_format:H:i'], 'estado' => ['required', Rule::in(['por_confirmar', 'confirmada'])],
         ]);
+        if (! empty($datos['servicio_id'])) {
+            $existe = DB::connection('usuarios')->table('servicios as s')
+                ->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
+                ->join('unidades_inventario as u', 'u.id', '=', 's.unidad_id')
+                ->where('s.id', $datos['servicio_id'])->where('s.estado', 'ACTIVO')
+                ->where('t.activo', true)->where('u.activo', true)->exists();
+            if (! $existe) {
+                throw ValidationException::withMessages(['servicio_id' => 'Selecciona un servicio activo del catálogo contable.']);
+            }
+        }
         if (! empty($datos['profesional_id'])) {
             $profesional = app(ProfesionalesCompartidos::class)->buscar($datos['profesional_id'], 'Médico/a');
             $datos['doctor'] = trim($profesional->nombres.' '.$profesional->apellidos);
@@ -82,6 +93,7 @@ class CitasController extends Controller
     {
         return ['id' => (string) $cita->id, 'pacienteId' => $cita->paciente_id,
             'profesionalId' => $cita->profesional_id,
+            'servicioId' => $cita->servicio_id,
             'paciente' => trim($cita->nombres.' '.$cita->apellido_paterno.' '.$cita->apellido_materno),
             'nombre' => $cita->nombres, 'apellidos' => trim($cita->apellido_paterno.' '.$cita->apellido_materno),
             'ci' => $cita->ci, 'fechaNacimiento' => $cita->fecha_nacimiento,

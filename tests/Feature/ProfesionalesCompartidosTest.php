@@ -18,6 +18,23 @@ class ProfesionalesCompartidosTest extends TestCase
         $this->withoutMiddleware(VerificarSesionCompartida::class);
         config(['database.connections.usuarios' => [...config('database.connections.sqlite'), 'database' => ':memory:']]);
         DB::purge('usuarios');
+        Schema::connection('usuarios')->create('tipos_inventario', function (Blueprint $t): void {
+            $t->id();
+            $t->boolean('activo');
+        });
+        Schema::connection('usuarios')->create('unidades_inventario', function (Blueprint $t): void {
+            $t->id();
+            $t->boolean('activo');
+        });
+        Schema::connection('usuarios')->create('servicios', function (Blueprint $t): void {
+            $t->id();
+            $t->unsignedBigInteger('tipo_id');
+            $t->unsignedBigInteger('unidad_id');
+            $t->string('estado');
+        });
+        DB::connection('usuarios')->table('tipos_inventario')->insert(['id' => 1, 'activo' => true]);
+        DB::connection('usuarios')->table('unidades_inventario')->insert(['id' => 1, 'activo' => true]);
+        DB::connection('usuarios')->table('servicios')->insert(['id' => 1, 'tipo_id' => 1, 'unidad_id' => 1, 'estado' => 'ACTIVO']);
         Schema::connection('usuarios')->create('profesionales', function (Blueprint $t): void {
             $t->uuid('id')->primary();
             $t->uuid('usuario_id')->nullable();
@@ -49,8 +66,9 @@ class ProfesionalesCompartidosTest extends TestCase
         $id = $this->catalogo();
         $paciente = $this->postJson('/api/v1/pacientes', ['nombres' => 'Paciente', 'apellido_paterno' => 'Prueba', 'apellido_materno' => 'Clinico', 'ci' => 'PROF-TEST', 'fecha_nacimiento' => '1990-01-01', 'genero' => 'Femenino', 'pais' => 'Bolivia', 'departamento' => 'Cochabamba', 'como_se_entero' => 'Otro'])->assertCreated()->json('data.id');
         $datos = ['paciente_id' => $paciente, 'profesional_id' => $id, 'doctor' => 'Nombre manipulado', 'especialidad' => 'Medicina general', 'consultorio' => 'Prueba', 'fecha' => '2026-11-01', 'hora' => '08:00', 'estado' => 'confirmada'];
-        $cita = $this->postJson('/api/citas', $datos)->assertCreated()->assertJsonPath('doctor', 'Médico Compartido')->json('id');
-        $this->assertDatabaseHas('citas', ['id' => $cita, 'profesional_id' => $id]);
+        $cita = $this->postJson('/api/citas', [...$datos, 'servicio_id' => 1])->assertCreated()->assertJsonPath('doctor', 'Médico Compartido')->assertJsonPath('servicioId', 1)->json('id');
+        $this->assertDatabaseHas('citas', ['id' => $cita, 'profesional_id' => $id, 'servicio_id' => 1]);
+        $this->postJson('/api/citas', [...$datos, 'hora' => '10:00', 'servicio_id' => 999])->assertUnprocessable()->assertJsonValidationErrors('servicio_id');
         DB::connection('usuarios')->table('profesionales')->where('id', $id)->update(['activo' => false]);
         $this->postJson('/api/citas', [...$datos, 'hora' => '09:00'])->assertUnprocessable()->assertJsonValidationErrors('profesional_id');
         $this->patchJson('/api/citas/'.$cita.'/estado', ['estado' => 'confirmada'])->assertUnprocessable()->assertJsonValidationErrors('profesional_id');
