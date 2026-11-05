@@ -47,9 +47,9 @@ class CitasController extends Controller
         if (! empty($datos['servicio_id'])) {
             $existe = DB::connection('usuarios')->table('servicios as s')
                 ->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
-                ->join('unidades_inventario as u', 'u.id', '=', 's.unidad_id')
+                ->leftJoin('unidades_inventario as u', 'u.id', '=', 's.unidad_id')
                 ->where('s.id', $datos['servicio_id'])->where('s.estado', 'ACTIVO')
-                ->where('t.activo', true)->where('u.activo', true)->exists();
+                ->where('t.activo', true)->where(fn ($q) => $q->whereNull('s.unidad_id')->orWhere('u.activo', true))->exists();
             if (! $existe) {
                 throw ValidationException::withMessages(['servicio_id' => 'Selecciona un servicio activo del catálogo contable.']);
             }

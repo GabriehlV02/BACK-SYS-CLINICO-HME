@@ -29,12 +29,12 @@ class ProfesionalesCompartidosTest extends TestCase
         Schema::connection('usuarios')->create('servicios', function (Blueprint $t): void {
             $t->id();
             $t->unsignedBigInteger('tipo_id');
-            $t->unsignedBigInteger('unidad_id');
+            $t->unsignedBigInteger('unidad_id')->nullable();
             $t->string('estado');
         });
         DB::connection('usuarios')->table('tipos_inventario')->insert(['id' => 1, 'activo' => true]);
         DB::connection('usuarios')->table('unidades_inventario')->insert(['id' => 1, 'activo' => true]);
-        DB::connection('usuarios')->table('servicios')->insert(['id' => 1, 'tipo_id' => 1, 'unidad_id' => 1, 'estado' => 'ACTIVO']);
+        DB::connection('usuarios')->table('servicios')->insert(['id' => 1, 'tipo_id' => 1, 'unidad_id' => null, 'estado' => 'ACTIVO']);
         Schema::connection('usuarios')->create('profesionales', function (Blueprint $t): void {
             $t->uuid('id')->primary();
             $t->uuid('usuario_id')->nullable();

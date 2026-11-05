@@ -31,8 +31,8 @@ class CatalogoCompartido
                 'precio' => (float) $i->precio_1, 'precio1' => $i->precio_1, 'precio2' => $i->precio_2, 'precio3' => $i->precio_3,
                 'stock' => (float) ($existencias[$i->id] ?? 0), 'fechaVencimiento' => $vencimientos[$i->id] ?? null])->all();
         $servicios = $db->table('servicios as s')->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
-            ->join('unidades_inventario as u', 'u.id', '=', 's.unidad_id')->leftJoin('categorias_inventario as c', 'c.id', '=', 's.categoria_id')
-            ->where('s.estado', 'ACTIVO')->where('t.activo', true)->where('u.activo', true)->orderBy('s.nombre')->orderBy('s.id')
+            ->leftJoin('unidades_inventario as u', 'u.id', '=', 's.unidad_id')->leftJoin('categorias_inventario as c', 'c.id', '=', 's.categoria_id')
+            ->where('s.estado', 'ACTIVO')->where('t.activo', true)->where(fn ($q) => $q->whereNull('s.unidad_id')->orWhere('u.activo', true))->orderBy('s.nombre')->orderBy('s.id')
             ->get(['s.id', 's.nombre', 's.precio_venta', 'u.nombre as unidad', 'c.nombre as categoria'])
             ->map(fn (object $s): array => ['id' => 'servicio-'.$s->id, 'contableId' => $s->id, 'origen' => 'CONTABLE', 'codigo' => 'SRV-'.str_pad((string) $s->id, 6, '0', STR_PAD_LEFT),
                 'nombre' => $s->nombre, 'tipo' => 'servicio', 'unidad' => $s->unidad, 'categoria' => $s->categoria ?? 'Sin categoría', 'precio' => (float) $s->precio_venta])->all();
