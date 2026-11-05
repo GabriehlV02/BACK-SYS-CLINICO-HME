@@ -136,12 +136,12 @@ class FarmaciaInventarioConversacion
             if (preg_match('/\b([a-z]{2,}\d{3,})\b.*?\b(cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte)\s*(?:unidades?|uds?|piezas?)\b/iu', $this->normalizar($mensaje), $hablado)) {
                 $datos = [$hablado[0], $hablado[1], (string) $this->numeroHablado($hablado[2])];
             } else {
-                return 'Seguimos en modo inventario para '.$sesion->sucursal.' · '.$sesion->almacen.'. Dicta cada conteo como código y cantidad, por ejemplo: FAR002123, 10 unidades.';
+                return 'No te escuché. Repítelo otra vez, por favor.';
             }
         }
 
         if (! isset($datos[1], $datos[2])) {
-            return 'Seguimos en modo inventario para '.$sesion->sucursal.' · '.$sesion->almacen.'. Dicta cada conteo como código y cantidad, por ejemplo: FAR002123, 10 unidades.';
+            return 'No te escuché. Repítelo otra vez, por favor.';
         }
 
         $codigo = mb_strtoupper($datos[1]);
@@ -154,7 +154,7 @@ class FarmaciaInventarioConversacion
                 }
             })->first(['i.id', 'i.nombre_comercial', 'i.marca', 'g.nombre as generico']);
         if (! $item) {
-            return 'No encontré el código '.$codigo.' en el catálogo. Revisa el código y vuelve a dictarlo junto con la cantidad.';
+            return 'No te escuché. Repítelo otra vez, por favor.';
         }
 
         $detalle = $db->table('farmacia_inventario_detalles')->where('inventario_id', $sesion->id)->where('item_id', $item->id)->first();
@@ -166,14 +166,18 @@ class FarmaciaInventarioConversacion
             $detalle = $db->table('farmacia_inventario_detalles')->where('id', $detalleId)->first();
         }
 
-        $db->table('farmacia_inventario_detalles')->where('id', $detalle->id)->update([
+        $actualizado = $db->table('farmacia_inventario_detalles')->where('id', $detalle->id)->update([
             'cantidad_contada' => $cantidad, 'contado_en' => now(), 'updated_at' => now(),
         ]);
-        $diferencia = $cantidad - (float) $detalle->cantidad_esperada;
-        $resultado = $diferencia < 0 ? 'faltan '.number_format(abs($diferencia), 3, ',', '.')
-            : ($diferencia > 0 ? 'sobran '.number_format($diferencia, 3, ',', '.') : 'coincide con el stock esperado');
+        if (! $actualizado) {
+            return 'No te escuché. Repítelo otra vez, por favor.';
+        }
 
-        return 'Anotado: '.$codigo.' · '.$item->generico.' ('.$item->marca.') — stock verificado '.$this->formatearCantidad($cantidad).'; esperado '.$this->formatearCantidad((float) $detalle->cantidad_esperada).', '.$resultado.'.';
+        $diferencia = $cantidad - (float) $detalle->cantidad_esperada;
+        $resultado = $diferencia < 0 ? 'faltante de '.$this->formatearCantidad(abs($diferencia)).' unidades'
+            : ($diferencia > 0 ? 'sobrante de '.$this->formatearCantidad($diferencia).' unidades' : 'correcto, coincide con la cantidad esperada');
+
+        return 'Anotado. Código '.$codigo.'. '.$item->nombre_comercial.'. Cantidad anotada '.$this->formatearCantidad($cantidad).' unidades. Cantidad esperada '.$this->formatearCantidad((float) $detalle->cantidad_esperada).' unidades. Diferencia: '.$resultado.'.';
     }
 
     private function finalizar(object $sesion, $db): string

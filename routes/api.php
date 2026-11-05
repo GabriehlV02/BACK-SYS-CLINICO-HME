@@ -97,6 +97,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
         Route::get('/farmacia/productos', [FarmaciaAlmacenController::class, 'index']);
         Route::post('/farmacia/productos', [FarmaciaAlmacenController::class, 'store']);
         Route::get('/farmacia/almacen', [FarmaciaAlmacenController::class, 'index']);
+        Route::get('/farmacia/almacen/existencias', [FarmaciaAlmacenController::class, 'existencias']);
         Route::post('/farmacia/almacen', [FarmaciaAlmacenController::class, 'store']);
         Route::get('/usuarios', [UsuariosController::class, 'index']);
         Route::post('/usuarios', [UsuariosController::class, 'store']);
