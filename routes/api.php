@@ -30,6 +30,7 @@ use App\Http\Controllers\CitasController;
 use App\Http\Controllers\ConfiguracionSignosVitalesController;
 use App\Http\Controllers\PacienteFichaController;
 use App\Http\Controllers\ProfesionalesCompartidosController;
+use App\Http\Controllers\UnidadesMedidaSignosVitalesController;
 use App\Http\Controllers\VentaProductosRecepcionController;
 use App\Http\Controllers\VincularClienteContableController;
 use App\Http\Middleware\RegistrarAuditoriaAccion;
@@ -50,6 +51,8 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
     Route::get('/v1/recepcion/clientes/{cliente}/ventas', [VentaProductosRecepcionController::class, 'historial'])->whereUuid('cliente');
     Route::post('/v1/recepcion/ventas', [VentaProductosRecepcionController::class, 'store']);
     Route::get('/v1/configuracion/signos-vitales', [ConfiguracionSignosVitalesController::class, 'index']);
+    Route::get('/v1/configuracion/unidades-signos-vitales', [UnidadesMedidaSignosVitalesController::class, 'index']);
+    Route::post('/v1/configuracion/unidades-signos-vitales', [UnidadesMedidaSignosVitalesController::class, 'store']);
     Route::post('/v1/configuracion/signos-vitales', [ConfiguracionSignosVitalesController::class, 'store']);
     Route::put('/v1/configuracion/signos-vitales/{signo}', [ConfiguracionSignosVitalesController::class, 'update']);
     Route::delete('/v1/configuracion/signos-vitales/{signo}', [ConfiguracionSignosVitalesController::class, 'destroy']);

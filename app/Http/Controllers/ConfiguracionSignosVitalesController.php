@@ -59,21 +59,35 @@ class ConfiguracionSignosVitalesController extends Controller
             'rangoReferencia.maximo' => ['required_with:rangoReferencia', 'numeric', 'gt:rangoReferencia.minimo'],
             'rangoReferencia.fuente' => ['nullable', 'string', 'max:500'],
             'rangoReferencia.contexto' => ['nullable', 'string', 'max:1000'],
+            'componentes' => ['nullable', 'array', 'max:20'],
+            'componentes.*' => ['array:id,nombre,rangoReferencia'],
+            'componentes.*.id' => ['required', 'string', 'max:80', 'distinct'],
+            'componentes.*.nombre' => ['required', 'string', 'max:120', 'distinct'],
+            'componentes.*.rangoReferencia' => ['nullable', 'array:nombre,minimo,maximo'],
+            'componentes.*.rangoReferencia.nombre' => ['required_with:componentes.*.rangoReferencia', 'string', 'max:120'],
+            'componentes.*.rangoReferencia.minimo' => ['required_with:componentes.*.rangoReferencia', 'numeric'],
+            'componentes.*.rangoReferencia.maximo' => ['required_with:componentes.*.rangoReferencia', 'numeric'],
         ]);
         $duplicado = DB::table('configuracion_signos_vitales')->where('activo', true)->whereRaw('LOWER(nombre) = ?', [mb_strtolower(trim($datos['nombre']))])->when($id, fn ($q) => $q->where('id', '!=', $id))->exists();
         if ($duplicado) {
             throw ValidationException::withMessages(['nombre' => 'Ya existe un signo vital con ese nombre.']);
         }
         $rango = $datos['rangoReferencia'] ?? null;
+        foreach ($datos['componentes'] ?? [] as $componente) {
+            $referencia = $componente['rangoReferencia'] ?? null;
+            if ($referencia && $referencia['minimo'] >= $referencia['maximo']) {
+                throw ValidationException::withMessages(['componentes' => 'El límite mínimo de cada dato debe ser menor que el máximo.']);
+            }
+        }
         if ($rango && ($datos['tipo'] === 'Texto' || ($datos['tipo'] === 'Número entero' && (floor((float) $rango['minimo']) != $rango['minimo'] || floor((float) $rango['maximo']) != $rango['maximo'])))) {
             throw ValidationException::withMessages(['rangoReferencia' => 'El rango no corresponde al tipo de dato.']);
         }
 
-        return ['nombre' => trim($datos['nombre']), 'unidad' => trim($datos['unidad']), 'abreviatura' => trim($datos['abreviatura']), 'tipo' => $datos['tipo'], 'rango_referencia' => $rango ? json_encode($rango, JSON_THROW_ON_ERROR) : null];
+        return ['nombre' => trim($datos['nombre']), 'unidad' => trim($datos['unidad']), 'abreviatura' => trim($datos['abreviatura']), 'tipo' => $datos['tipo'], 'rango_referencia' => $rango ? json_encode($rango, JSON_THROW_ON_ERROR) : null, 'componentes' => ! empty($datos['componentes']) ? json_encode($datos['componentes'], JSON_THROW_ON_ERROR) : null];
     }
 
     private function presentar(object $signo): array
     {
-        return ['id' => $signo->id, 'nombre' => $signo->nombre, 'unidad' => $signo->unidad, 'abreviatura' => $signo->abreviatura, 'tipo' => $signo->tipo, 'rangoReferencia' => $signo->rango_referencia ? json_decode($signo->rango_referencia, true, 512, JSON_THROW_ON_ERROR) : null];
+        return ['id' => $signo->id, 'nombre' => $signo->nombre, 'unidad' => $signo->unidad, 'abreviatura' => $signo->abreviatura, 'tipo' => $signo->tipo, 'rangoReferencia' => $signo->rango_referencia ? json_decode($signo->rango_referencia, true, 512, JSON_THROW_ON_ERROR) : null, 'componentes' => $signo->componentes ? json_decode($signo->componentes, true, 512, JSON_THROW_ON_ERROR) : []];
     }
 }
