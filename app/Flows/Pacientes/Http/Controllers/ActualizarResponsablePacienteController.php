@@ -20,12 +20,13 @@ class ActualizarResponsablePacienteController
         ]);
 
         $datos['ci'] = isset($datos['ci']) ? trim($datos['ci']) : null;
-        $pacienteVinculado = !empty($datos['ci'])
+        $pacienteVinculado = ! empty($datos['ci'])
             ? Paciente::query()->where('ci', $datos['ci'])->where('id', '!=', $paciente->id)->first()
             : null;
 
         $responsable = DB::transaction(function () use ($paciente, $datos, $pacienteVinculado): PacienteResponsable {
             $paciente->responsables()->where('activo', true)->update(['activo' => false]);
+
             return $paciente->responsables()->create([
                 ...$datos,
                 'paciente_vinculado_id' => $pacienteVinculado?->id,

@@ -123,7 +123,9 @@ class FarmaciaSucursalesController
         return $db->table('items_inventario as i')->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')
             ->join('tipos_inventario as t', 't.id', '=', 'g.tipo_id')->join('lotes_items as l', 'l.item_id', '=', 'i.id')
             ->join('existencias_lote as x', 'x.lote_id', '=', 'l.id')
-            ->leftJoin('item_almacen_ubicaciones as u', function ($join) use ($almacenId): void { $join->on('u.item_id', '=', 'i.id')->where('u.almacen_id', '=', $almacenId); })
+            ->leftJoin('item_almacen_ubicaciones as u', function ($join) use ($almacenId): void {
+                $join->on('u.item_id', '=', 'i.id')->where('u.almacen_id', '=', $almacenId);
+            })
             ->where('x.almacen_id', $almacenId)->where('x.cantidad', '>', 0)->where('i.estado', 'ACTIVO')->where('g.estado', 'ACTIVO')->whereIn('t.tipo_base', ['PRODUCTO', 'INSUMO'])
             ->groupBy('i.id', 'i.clave', 'i.codigo_barras', 'i.nombre_comercial', 'i.marca', 'i.presentacion', 'g.nombre', 'u.repisa_id', 'u.ubicacion')
             ->orderBy('i.nombre_comercial')->get(['i.id', 'i.clave', 'i.codigo_barras', 'i.nombre_comercial as nombre', 'i.marca', 'i.presentacion', 'g.nombre as generico', 'u.repisa_id as repisaId', 'u.ubicacion', $db->raw('SUM(x.cantidad) as cantidad')])
