@@ -16,11 +16,17 @@ class DiagnosticosController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $normalizada = strtr(mb_strtoupper($busqueda, 'UTF-8'), ['Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U']);
+        $nombreNormalizado = 'UPPER(nombre)';
+        foreach (['Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U', 'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U', 'ü' => 'U'] as $acentuada => $simple) {
+            $nombreNormalizado = "REPLACE({$nombreNormalizado}, '{$acentuada}', '{$simple}')";
+        }
+
         $resultados = DB::table('diagnosticos')
             ->select('codigo', 'nombre', 'idioma_nombre')
-            ->where(function ($consulta) use ($busqueda): void {
-                $consulta->where('codigo', 'like', $busqueda.'%')
-                    ->orWhere('nombre', 'like', '%'.$busqueda.'%');
+            ->where(function ($consulta) use ($normalizada, $nombreNormalizado): void {
+                $consulta->whereRaw('UPPER(codigo) LIKE ?', [$normalizada.'%'])
+                    ->orWhereRaw("{$nombreNormalizado} LIKE ?", ['%'.$normalizada.'%']);
             })
             ->orderBy('nombre')->limit(20)->get();
 

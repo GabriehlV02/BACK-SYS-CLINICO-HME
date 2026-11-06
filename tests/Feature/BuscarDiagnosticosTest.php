@@ -20,6 +20,9 @@ class BuscarDiagnosticosTest extends TestCase
         $this->withoutMiddleware();
         $this->getJson('/api/v1/diagnosticos?buscar=1A00')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.codigo', '1A00');
         $this->getJson('/api/v1/diagnosticos?buscar=Tuberc')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.codigo', '1B00');
+        $this->getJson('/api/v1/diagnosticos?buscar=colera')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.codigo', '1A00');
+        $this->getJson('/api/v1/diagnosticos?buscar=CÓLERA')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.codigo', '1A00');
+        $this->getJson('/api/v1/diagnosticos?buscar=1a00')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.codigo', '1A00');
         $this->getJson('/api/v1/diagnosticos?buscar=x')->assertUnprocessable();
     }
 }
