@@ -3,7 +3,6 @@
 namespace App\Flows\Farmacia;
 
 use App\Flows\Autenticacion\AccesoCompartido;
-use Illuminate\Support\Facades\DB;
 
 class FarmaciaAlmaceneroConversacion
 {
@@ -21,13 +20,17 @@ class FarmaciaAlmaceneroConversacion
             ->whereIn('estado', ['ESPERANDO_ALMACEN', 'EN_CURSO'])->orderByDesc('id')->first();
 
         if (preg_match('/\bmodo inventario\b/u', $normalizado)) {
-            if ($sesion) $db->table('farmacia_almacenador_sesiones')->where('id', $sesion->id)->update(['estado' => 'CERRADO', 'updated_at' => now()]);
+            if ($sesion) {
+                $db->table('farmacia_almacenador_sesiones')->where('id', $sesion->id)->update(['estado' => 'CERRADO', 'updated_at' => now()]);
+            }
 
             return null;
         }
 
         if (preg_match('/\b(?:termina|terminar|finaliza|finalizar|salir|cierra|cerrar) (?:el )?modo almacenero\b/u', $normalizado)) {
-            if (! $sesion) return 'No tienes un modo almacenero activo para cerrar.';
+            if (! $sesion) {
+                return 'No tienes un modo almacenero activo para cerrar.';
+            }
             $acceso->exigir($usuario->id, 'INVENTARIO_GESTIONAR');
             $db->table('farmacia_almacenador_sesiones')->where('id', $sesion->id)->update(['estado' => 'CERRADO', 'updated_at' => now()]);
 
@@ -49,9 +52,13 @@ class FarmaciaAlmaceneroConversacion
             return $this->elegirAlmacen((object) ['id' => $id], $normalizado, $acceso);
         }
 
-        if (! $sesion) return null;
+        if (! $sesion) {
+            return null;
+        }
         $acceso->exigir($usuario->id, 'INVENTARIO_GESTIONAR');
-        if ($sesion->estado === 'ESPERANDO_ALMACEN') return $this->elegirAlmacen($sesion, $normalizado, $acceso);
+        if ($sesion->estado === 'ESPERANDO_ALMACEN') {
+            return $this->elegirAlmacen($sesion, $normalizado, $acceso);
+        }
 
         return $this->asignarUbicacion($sesion, $mensaje, $acceso);
     }
@@ -60,15 +67,20 @@ class FarmaciaAlmaceneroConversacion
     {
         $db = $acceso->conexion();
         $permitidos = $acceso->almacenesPermitidos();
-        if ($permitidos === []) return 'Tu usuario no tiene almacenes asignados para organizar.';
+        if ($permitidos === []) {
+            return 'Tu usuario no tiene almacenes asignados para organizar.';
+        }
         $almacenes = $db->table('almacenes_inventario as a')->join('sucursales_inventario as s', 's.id', '=', 'a.sucursal_id')
             ->where('a.activo', true)->where('s.activo', true)->when($permitidos !== null, fn ($q) => $q->whereIn('a.id', $permitidos))
             ->orderBy('s.nombre')->orderBy('a.nombre')->get(['a.id', 'a.sucursal_id', 'a.nombre as almacen', 's.nombre as sucursal']);
-        if ($almacenes->isEmpty()) return 'No encuentro sucursales y almacenes activos a los que tengas acceso.';
+        if ($almacenes->isEmpty()) {
+            return 'No encuentro sucursales y almacenes activos a los que tengas acceso.';
+        }
 
         $coincidencias = $almacenes->filter(fn (object $a): bool => str_contains($normalizado, $this->normalizar($a->almacen)));
-        if ($coincidencias->count() === 1) $seleccionado = $coincidencias->first();
-        else {
+        if ($coincidencias->count() === 1) {
+            $seleccionado = $coincidencias->first();
+        } else {
             $sucursales = $almacenes->pluck('sucursal')->unique()->filter(fn (string $n): bool => str_contains($normalizado, $this->normalizar($n)));
             if ($sucursales->count() !== 1) {
                 $opciones = $almacenes->map(fn (object $a): string => $a->sucursal.' · '.$a->almacen)->unique()->implode('; ');
@@ -76,7 +88,9 @@ class FarmaciaAlmaceneroConversacion
                 return '¿En qué sucursal y almacén registraré las ubicaciones? Puedes decir el nombre completo. Opciones: '.$opciones.'.';
             }
             $deSucursal = $almacenes->where('sucursal', $sucursales->first());
-            if ($deSucursal->count() !== 1) return 'La sucursal '.$sucursales->first().' tiene varios almacenes. ¿En cuál organizarás los productos? '.$deSucursal->pluck('almacen')->implode(', ').'.';
+            if ($deSucursal->count() !== 1) {
+                return 'La sucursal '.$sucursales->first().' tiene varios almacenes. ¿En cuál organizarás los productos? '.$deSucursal->pluck('almacen')->implode(', ').'.';
+            }
             $seleccionado = $deSucursal->first();
         }
 
@@ -98,16 +112,22 @@ class FarmaciaAlmaceneroConversacion
         $codigo = mb_strtoupper($coincidencia[1]);
         $item = $db->table('items_inventario')->where('estado', 'ACTIVO')->where(function ($q) use ($codigo): void {
             $q->whereRaw('UPPER(clave) = ?', [$codigo])->orWhereRaw('UPPER(codigo_barras) = ?', [$codigo]);
-            if (preg_match('/^ITM-0*(\d+)$/', $codigo, $id)) $q->orWhere('id', (int) $id[1]);
+            if (preg_match('/^ITM-0*(\d+)$/', $codigo, $id)) {
+                $q->orWhere('id', (int) $id[1]);
+            }
         })->first(['id', 'nombre_comercial', 'marca', 'clave', 'codigo_barras']);
-        if (! $item) return 'No encontré el código '.$codigo.' en el catálogo activo. Verifica el código y vuelve a dictarlo.';
+        if (! $item) {
+            return 'No encontré el código '.$codigo.' en el catálogo activo. Verifica el código y vuelve a dictarlo.';
+        }
         $espacios = $db->table('farmacia_espacios')->where('almacen_id', $sesion->almacen_id)->get(['id', 'tipo', 'nombre']);
         $texto = $this->normalizar($mensaje);
         $espacio = $espacios->first(fn (object $e): bool => str_contains($texto, $this->normalizar($e->nombre)));
         if (! $espacio && preg_match('/\bestante\s*(\d+)\b/u', $texto, $numeroEstante)) {
             $espacio = $espacios->first(fn (object $e): bool => $e->tipo === 'ESTANTE' && preg_match('/\b'.preg_quote($numeroEstante[1], '/').'\b/u', $this->normalizar($e->nombre)) === 1);
         }
-        if (! $espacio) return 'Encontré '.$codigo.', pero necesito el estante configurado en la sucursal. Dime, por ejemplo: estante 2.';
+        if (! $espacio) {
+            return 'Encontré '.$codigo.', pero necesito el estante configurado en la sucursal. Dime, por ejemplo: estante 2.';
+        }
         $repisas = $db->table('farmacia_repisas')->where('espacio_id', $espacio->id)->orderBy('orden')->orderBy('id')->get(['id', 'nombre', 'orden']);
         $repisa = $repisas->first(fn (object $r): bool => str_contains($texto, $this->normalizar($r->nombre)));
         if (! $repisa && preg_match('/\brepisa\s*(\d+)\b/u', $texto, $numeroRepisa)) {
@@ -115,16 +135,23 @@ class FarmaciaAlmaceneroConversacion
             $repisa = $repisas->first(fn (object $r): bool => (int) $r->orden === $indice)
                 ?? $repisas->values()->get($indice);
         }
-        if (! $repisa) return 'Encontré '.$codigo.' en '.$espacio->nombre.', pero no identifiqué una repisa válida. Dime su nombre o número.';
+        if (! $repisa) {
+            return 'Encontré '.$codigo.' en '.$espacio->nombre.', pero no identifiqué una repisa válida. Dime su nombre o número.';
+        }
 
         $stock = $db->table('existencias_lote as x')->join('lotes_items as l', 'l.id', '=', 'x.lote_id')
             ->where('x.almacen_id', $sesion->almacen_id)->where('l.item_id', $item->id)->where('x.cantidad', '>', 0)->exists();
-        if (! $stock) return 'No puedo asignar '.$codigo.' porque no tiene stock en '.$sesion->almacen.'.';
+        if (! $stock) {
+            return 'No puedo asignar '.$codigo.' porque no tiene stock en '.$sesion->almacen.'.';
+        }
         $ubicacion = mb_substr($espacio->nombre.' · '.$repisa->nombre, 0, 120);
         $llave = ['item_id' => $item->id, 'almacen_id' => $sesion->almacen_id];
         $registro = ['repisa_id' => $repisa->id, 'ubicacion' => $ubicacion, 'updated_at' => now()];
-        if ($db->table('item_almacen_ubicaciones')->where($llave)->exists()) $db->table('item_almacen_ubicaciones')->where($llave)->update($registro);
-        else $db->table('item_almacen_ubicaciones')->insert($llave + $registro + ['created_at' => now()]);
+        if ($db->table('item_almacen_ubicaciones')->where($llave)->exists()) {
+            $db->table('item_almacen_ubicaciones')->where($llave)->update($registro);
+        } else {
+            $db->table('item_almacen_ubicaciones')->insert($llave + $registro + ['created_at' => now()]);
+        }
 
         return 'Ubicación guardada: '.$codigo.' · '.$item->nombre_comercial.($item->marca ? ' ('.$item->marca.')' : '').' → '.$sesion->sucursal.' · '.$sesion->almacen.' · '.$ubicacion.'.';
     }

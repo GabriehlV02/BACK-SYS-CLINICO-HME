@@ -139,7 +139,9 @@ class TomiInventario
             if ($gruposProducto->count() === 1) {
                 $restante = $solicitado;
                 foreach ($gruposProducto->first() as $lote) {
-                    if ($restante <= 0) break;
+                    if ($restante <= 0) {
+                        break;
+                    }
                     $asignado = min($restante, (float) $lote->cantidad);
                     $vence = $lote->vencimiento ?: 'sin fecha de vencimiento registrada';
                     $ubicacion = $lote->ubicacion ?: 'ubicación sin registrar';

@@ -49,9 +49,13 @@ return new class extends Migration
             $table->string('dicom_study_uid', 150)->nullable()->index()->after('orthanc_study_id');
         });
     }
+
     public function down(): void
     {
-        Schema::dropIfExists('estudios_ecocardiograma'); Schema::dropIfExists('estudios_ecografia');
-        Schema::dropIfExists('estudios_tomografia'); Schema::dropIfExists('estudios_laboratorio'); Schema::dropIfExists('estudios');
+        Schema::dropIfExists('estudios_ecocardiograma');
+        Schema::dropIfExists('estudios_ecografia');
+        Schema::dropIfExists('estudios_tomografia');
+        Schema::dropIfExists('estudios_laboratorio');
+        Schema::dropIfExists('estudios');
     }
 };
