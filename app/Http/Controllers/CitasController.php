@@ -86,7 +86,8 @@ class CitasController extends Controller
     private function consulta(): Builder
     {
         return DB::table('citas')->join('pacientes', 'pacientes.id', '=', 'citas.paciente_id')
-            ->select(['citas.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci', 'pacientes.fecha_nacimiento', 'pacientes.direccion_domicilio']);
+            ->select(['citas.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci', 'pacientes.fecha_nacimiento', 'pacientes.direccion_domicilio'])
+            ->selectSub(DB::table('valoraciones_signos_vitales')->selectRaw('count(*)')->whereColumn('cita_id', 'citas.id'), 'cantidad_valoraciones');
     }
 
     private function presentar(object $cita): array
@@ -100,6 +101,6 @@ class CitasController extends Controller
             'edad' => (int) Carbon::parse($cita->fecha_nacimiento)->age,
             'domicilio' => $cita->direccion_domicilio, 'doctor' => $cita->doctor,
             'especialidad' => $cita->especialidad, 'consultorio' => $cita->consultorio,
-            'fecha' => $cita->fecha, 'hora' => $cita->hora, 'estado' => $cita->estado];
+            'fecha' => $cita->fecha, 'hora' => $cita->hora, 'estado' => $cita->estado, 'signosRegistrados' => (int) $cita->cantidad_valoraciones > 0];
     }
 }
