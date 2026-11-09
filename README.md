@@ -1,58 +1,61 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Sistema Clínico HME · API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API del Sistema Clínico HME, desarrollada con Laravel. Proporciona autenticación y servicios clínicos para el [frontend del Sistema Clínico HME](https://github.com/GabriehlV02/FRONT-SYS-CLINICO-HME), además de puntos de integración con el sistema contable.
 
-## About Laravel
+[![Laravel](https://img.shields.io/badge/Laravel-13.x-FF2D20?logo=laravel&logoColor=white)](https://laravel.com/)
+[![PHP](https://img.shields.io/badge/PHP-8.3%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Responsabilidades
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Inicio de sesión, sesión compartida y recuperación de acceso.
+- Servicios de pacientes, citas, profesionales, diagnósticos y recepción.
+- Flujos de laboratorio, signos vitales, farmacia, emergencias e internación.
+- Validación y persistencia de solicitudes mediante Laravel y Eloquent.
+- Integración autenticada con el sistema contable para datos compartidos.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Las rutas HTTP se definen en `routes/api.php`. La autorización, las validaciones y la persistencia se implementan en `app/` y `database/`.
 
-## Learning Laravel
+## Requisitos
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+- PHP 8.3 o posterior y Composer.
+- Base de datos configurada en `.env` (la plantilla utiliza SQLite).
+- Node.js y npm únicamente si vas a compilar los recursos incluidos en Laravel.
+- Servicios externos opcionales, como Orthanc, según los módulos que vayas a utilizar.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Instalación local
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+Desde la raíz del repositorio:
 
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```powershell
+composer install
+Copy-Item .env.example .env
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve --host 127.0.0.1 --port 5005
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+La API quedará disponible en `http://127.0.0.1:5005`. Si cambias el puerto, actualiza `VITE_API_TARGET` en el frontend clínico.
 
-## Contributing
+Configura en `.env` los valores de base de datos, integración contable y servicios externos que utilice tu entorno. Mantén las credenciales fuera de Git y usa `APP_DEBUG=false` en entornos publicados.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Comandos útiles
 
-## Code of Conduct
+```powershell
+php artisan route:list --path=api
+php artisan migrate:status
+php artisan test
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Estructura
 
-## Security Vulnerabilities
+```text
+app/          # dominio, flujos, controladores y servicios
+routes/       # rutas HTTP
+database/     # migraciones, factories y seeders
+tests/        # pruebas automatizadas
+config/       # configuración de Laravel
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Seguridad
 
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+No publiques `.env`, tokens de integración, claves de servicios ni datos personales o clínicos. Antes de compartir registros de errores, elimina identificadores y contenido sensible.
