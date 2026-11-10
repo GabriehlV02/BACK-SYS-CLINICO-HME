@@ -57,10 +57,9 @@ class AccesoCompartido
 
     public function emitir(object $usuario): array
     {
-        $expira = now()->addHours(8)->getTimestamp();
-        $token = Crypt::encryptString(json_encode(['sub' => $usuario->id, 'exp' => $expira, 'huella' => hash('sha256', $usuario->password), 'nonce' => Str::random(32)], JSON_THROW_ON_ERROR));
+        $token = Crypt::encryptString(json_encode(['sub' => $usuario->id, 'huella' => hash('sha256', $usuario->password), 'nonce' => Str::random(32)], JSON_THROW_ON_ERROR));
 
-        return ['token' => $token, 'expiresAt' => $expira * 1000, 'usuario' => $this->datos($usuario)];
+        return ['token' => $token, 'expiresAt' => null, 'usuario' => $this->datos($usuario)];
     }
 
     public function verificar(?string $token): object
@@ -71,7 +70,7 @@ class AccesoCompartido
         } catch (Throwable) {
             abort(401, 'La sesión no es válida.');
         }
-        abort_unless(is_array($datos) && isset($datos['sub'], $datos['exp'], $datos['huella']) && is_string($datos['sub']) && Str::isUuid($datos['sub']) && is_string($datos['huella']) && is_int($datos['exp']) && $datos['exp'] > now()->getTimestamp(), 401, 'La sesión expiró.');
+        abort_unless(is_array($datos) && isset($datos['sub'], $datos['huella']) && is_string($datos['sub']) && Str::isUuid($datos['sub']) && is_string($datos['huella']), 401, 'La sesión no es válida.');
         abort_if(Cache::has('sesion-clinica-revocada:'.hash('sha256', $token)), 401, 'La sesión fue cerrada.');
         $usuario = $this->conexion()->table('usuarios_sistema')->where('id', $datos['sub'])->first();
         abort_unless($usuario && $this->permitido($usuario) && hash_equals(hash('sha256', $usuario->password), $datos['huella']), 401, 'Tu acceso cambió. Inicia sesión nuevamente.');
@@ -81,7 +80,7 @@ class AccesoCompartido
 
     public function revocar(string $token): void
     {
-        Cache::put('sesion-clinica-revocada:'.hash('sha256', $token), true, now()->addHours(8));
+        Cache::forever('sesion-clinica-revocada:'.hash('sha256', $token), true);
     }
 
     public function exigir(string $usuarioId, string $permiso): void

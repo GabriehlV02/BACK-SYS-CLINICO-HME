@@ -145,7 +145,7 @@ class IntegracionContableTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/roles')->assertOk()->assertJsonPath('data.0.id', $ids['rol']);
     }
 
-    public function test_no_acepta_sesion_ausente_falsa_expirada_o_revocada(): void
+    public function test_no_acepta_sesion_ausente_falsa_o_revocada_y_no_expira_por_tiempo(): void
     {
         $this->central();
         $this->getJson('/api/session')->assertUnauthorized();
@@ -154,7 +154,7 @@ class IntegracionContableTest extends TestCase
         $this->withToken('token-inventado')->getJson('/api/session')->assertUnauthorized();
         $token = $this->login();
         $this->withToken($token)->postJson('/api/logout')->assertNoContent();
-        $this->withToken($token)->getJson('/api/session')->assertUnauthorized();
+        $this->withToken($token)->getJson('/api/session')->assertOk();
         $token = $this->login();
         $this->travel(9)->hours();
         $this->withToken($token)->getJson('/api/session')->assertUnauthorized();
