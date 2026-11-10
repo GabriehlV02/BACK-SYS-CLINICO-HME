@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Flows\Autenticacion\AccesoCompartido;
+use App\Flows\Atenciones\SincronizarOrdenVenta;
 use Illuminate\Database\Connection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -92,13 +93,19 @@ class VentaProductosRecepcionController extends Controller
             'caja_id' => ['required', 'integer'], 'almacen_id' => ['required', 'integer'],
             'descuento' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
             'detalles' => ['required', 'array', 'min:1', 'max:100'],
-            'detalles.*.item_id' => ['required', 'integer', 'distinct'],
+            'detalles.*.item_id' => ['required_without:detalles.*.servicio_id', 'integer', 'distinct'],
+            'detalles.*.servicio_id' => ['required_without:detalles.*.item_id', 'integer', 'distinct'],
             'detalles.*.cantidad' => ['required', 'integer', 'min:1', 'max:100000'],
             'detalles.*.precio_unitario' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
             'pagos' => ['required', 'array', 'min:1', 'max:10'],
             'pagos.*.metodo' => ['required', Rule::in(['Efectivo', 'QR', 'Tarjeta', 'Transferencia'])],
             'pagos.*.monto' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
         ]);
+        foreach ($datos['detalles'] as $linea) {
+            if (isset($linea['item_id'], $linea['servicio_id'])) {
+                throw ValidationException::withMessages(['detalles' => 'Cada línea debe corresponder a un producto o a un servicio.']);
+            }
+        }
         $db = $acceso->conexion();
         $usuarioId = $request->user()->id;
         $huella = hash('sha256', json_encode($datos, JSON_THROW_ON_ERROR));
@@ -117,12 +124,36 @@ class VentaProductosRecepcionController extends Controller
                 ->when(! $admin, fn ($q) => $q->whereExists(fn ($q) => $q->selectRaw('1')->from('almacen_usuario as au')->whereColumn('au.almacen_id', 'a.id')->where('au.usuario_id', $usuarioId)))->first();
             abort_unless($almacen, 403, 'No tienes acceso al almacén seleccionado.');
             abort_unless($db->table('clientes')->where('id', $datos['cliente_id'])->exists(), 422, 'Selecciona un paciente vinculado al contable.');
-            $lineas = collect($datos['detalles'])->sortBy('item_id')->values();
+            $lineas = collect($datos['detalles'])->sortBy(fn ($linea) => ($linea['servicio_id'] ?? 0).':'.($linea['item_id'] ?? 0))->values();
+            $servicioIds = $lineas->pluck('servicio_id')->filter()->values();
+            $servicios = $servicioIds->isEmpty() ? collect() : $db->table('servicios as s')->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
+                ->leftJoin('categorias_inventario as c', 'c.id', '=', 's.categoria_id')
+                ->whereIn('s.id', $servicioIds)->where('s.estado', 'ACTIVO')->where('t.activo', true)->where('t.tipo_base', 'SERVICIO')
+                ->get(['s.id', 's.nombre', 's.precio_venta', 't.nombre as tipo_servicio', 'c.nombre as categoria'])->keyBy('id');
+            $pacienteId = null;
+            if ($servicioIds->isNotEmpty()) {
+                $pacienteId = $db->table('clientes')->where('id', $datos['cliente_id'])->value('paciente_id');
+                abort_unless($pacienteId && \Illuminate\Support\Facades\DB::table('pacientes')->where('id', $pacienteId)->exists(), 422, 'Selecciona un paciente clínico vinculado al cliente.');
+            }
             $items = $db->table('items_inventario as i')->join('productos_base as g', 'g.id', '=', 'i.producto_base_id')->join('tipos_inventario as t', 't.id', '=', 'g.tipo_id')
                 ->whereIn('i.id', $lineas->pluck('item_id'))->where('i.estado', 'ACTIVO')->where('g.estado', 'ACTIVO')->where('t.activo', true)->whereIn('t.tipo_base', ['PRODUCTO', 'INSUMO'])
                 ->get(['i.id', 'i.nombre_comercial', 'i.precio_1', 't.tipo_base'])->keyBy('id');
             $subtotal = 0;
             foreach ($lineas as $linea) {
+                if (isset($linea['servicio_id'])) {
+                    $servicio = $servicios->get($linea['servicio_id']);
+                    if (! $servicio || ! $this->tipoEstudio($servicio) || $linea['cantidad'] > 100) {
+                        throw ValidationException::withMessages(['detalles' => 'Selecciona un servicio de imagenología activo y reconocido.']);
+                    }
+                    if (! in_array('Servicios', json_decode($caja->tipos_item, true) ?? [], true)) {
+                        throw ValidationException::withMessages(['caja_id' => 'La caja seleccionada no permite vender servicios.']);
+                    }
+                    if ((int) round((float) $servicio->precio_venta * 100) !== (int) round((float) $linea['precio_unitario'] * 100)) {
+                        throw ValidationException::withMessages(['detalles' => 'El precio del servicio cambió. Actualiza el catálogo.']);
+                    }
+                    $subtotal += (int) round((float) $servicio->precio_venta * 100) * $linea['cantidad'];
+                    continue;
+                }
                 $item = $items->get($linea['item_id']);
                 if (! $item) {
                     throw ValidationException::withMessages(['detalles' => 'Uno de los productos o insumos no está activo.']);
@@ -159,6 +190,15 @@ class VentaProductosRecepcionController extends Controller
             $ahora = now();
             $db->table('carritos_venta')->insert(['id' => $ventaId, 'codigo' => $codigo, 'cliente_id' => $datos['cliente_id'], 'usuario_sistema_id' => $usuarioId, 'sucursal_id' => $caja->sucursal_id, 'caja_id' => $caja->id, 'estado' => 'COMPLETADA', 'moneda' => 'BOB', 'subtotal' => $subtotal / 100, 'descuento' => $descuento / 100, 'total' => ($subtotal - $descuento) / 100, 'observaciones' => 'Origen: recepción clínica', 'cobrada_en' => $ahora, 'created_at' => $ahora, 'updated_at' => $ahora]);
             foreach ($lineas as $linea) {
+                if (isset($linea['servicio_id'])) {
+                    $servicio = $servicios->get($linea['servicio_id']);
+                    $detalleId = (string) Str::uuid();
+                    $db->table('carrito_venta_detalles')->insert(['id' => $detalleId, 'carrito_venta_id' => $ventaId, 'codigo_item' => 'SRV-'.str_pad((string) $servicio->id, 6, '0', STR_PAD_LEFT), 'nombre_item' => $servicio->nombre, 'tipo_item' => 'Servicio', 'cantidad' => $linea['cantidad'], 'precio_unitario' => $servicio->precio_venta, 'descuento' => 0, 'total' => round((float) $servicio->precio_venta * $linea['cantidad'], 2), 'created_at' => $ahora, 'updated_at' => $ahora]);
+                    for ($unidad = 1; $unidad <= $linea['cantidad']; $unidad++) {
+                        $db->table('ventas_clinicas_ordenes')->insert(['venta_detalle_id' => $detalleId, 'unidad' => $unidad, 'paciente_id' => $pacienteId, 'tipo' => $this->tipoEstudio($servicio), 'nombre' => $servicio->nombre, 'created_at' => $ahora, 'updated_at' => $ahora]);
+                    }
+                    continue;
+                }
                 $item = $items->get($linea['item_id']);
                 $restante = $linea['cantidad'] * 1000;
                 $existencias = $db->table('existencias_lote as e')->join('lotes_items as l', 'l.id', '=', 'e.lote_id')
@@ -187,6 +227,59 @@ class VentaProductosRecepcionController extends Controller
             return $db->table('carritos_venta')->where('id', $ventaId)->first();
         }, 3);
 
-        return response()->json(['data' => $venta], 201);
+        $pendiente = false;
+        if (collect($datos['detalles'])->contains(fn ($linea) => isset($linea['servicio_id']))) {
+            try {
+                app(SincronizarOrdenVenta::class)->procesar($db, $venta->id);
+            } catch (\Throwable $error) {
+                report($error);
+                $pendiente = true;
+            }
+        }
+        return response()->json(['data' => $venta, 'ordenes_pendientes' => $pendiente], 201);
+    }
+
+    private function tipoEstudio(object $servicio): ?string
+    {
+        $texto = strtoupper(Str::ascii(implode(' ', [$servicio->tipo_servicio ?? '', $servicio->categoria ?? '', $servicio->nombre])));
+        return match (true) {
+            str_contains($texto, 'ECOCARDIO') => 'ECOCARDIOGRAMA',
+            str_contains($texto, 'TOMOGRAF') => 'TOMOGRAFIA',
+            str_contains($texto, 'ECOGRAF') => 'ECOGRAFIA',
+            str_contains($texto, 'RADIOGRAF'), str_contains($texto, 'RAYOS X') => 'RADIOGRAFIA',
+            default => null,
+        };
+    }
+
+    public function recuperarOrdenes(Request $request, AccesoCompartido $acceso, SincronizarOrdenVenta $sincronizador): JsonResponse
+    {
+        $admin = $this->autorizar($request, $acceso);
+        $db = $acceso->conexion();
+        $ventas = $db->table('ventas_clinicas_ordenes as o')
+            ->join('carrito_venta_detalles as d', 'd.id', '=', 'o.venta_detalle_id')
+            ->join('carritos_venta as v', 'v.id', '=', 'd.carrito_venta_id')
+            ->when(! $admin, fn ($query) => $query->where('v.usuario_sistema_id', $request->user()->id))->where('v.estado', 'COMPLETADA')
+            ->whereNull('o.procesada_en')->distinct()->limit(25)->pluck('v.id');
+        $errores = 0;
+        foreach ($ventas as $ventaId) {
+            try {
+                $sincronizador->procesar($db, $ventaId);
+            } catch (\Throwable $error) {
+                report($error);
+                $errores++;
+            }
+        }
+        return response()->json(['ventas_revisadas' => $ventas->count(), 'pendientes' => $errores]);
+    }
+
+    public function consultarSolicitud(Request $request, string $solicitud, AccesoCompartido $acceso): JsonResponse
+    {
+        $this->autorizar($request, $acceso);
+        $venta = $acceso->conexion()->table('ventas_clinicas_solicitudes as s')
+            ->join('carritos_venta as v', 'v.id', '=', 's.venta_id')
+            ->where('s.solicitud_id', $solicitud)->where('s.usuario_id', $request->user()->id)
+            ->first(['v.id', 'v.codigo', 'v.estado']);
+        abort_unless($venta, 404);
+        return response()->json(['data' => $venta]);
     }
 }

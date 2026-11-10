@@ -13,7 +13,7 @@ class EstudiosController
     public function agenda(): JsonResponse
     {
         return response()->json(['data' => DB::table('estudios')->join('pacientes', 'pacientes.id', '=', 'estudios.paciente_id')
-            ->whereIn('estudios.estado', ['SOLICITADO', 'EN_PROCESO'])->where('estudios.tipo', '!=', 'LABORATORIO')
+            ->whereIn('estudios.estado', ['SOLICITADO', 'EN_PROCESO'])->whereIn('estudios.tipo', ['TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'])
             ->orderBy('estudios.solicitado_en')->get(['estudios.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci'])]);
     }
 

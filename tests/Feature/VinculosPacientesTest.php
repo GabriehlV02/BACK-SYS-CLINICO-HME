@@ -82,7 +82,8 @@ class VinculosPacientesTest extends TestCase
     {
         $paciente = $this->paciente();
         $this->postJson('/api/v1/pacientes/'.$paciente['id'].'/estudios', ['tipo' => 'TOMOGRAFIA', 'nombre' => 'Estudio de prueba'])->assertCreated();
-        $this->getJson('/api/v1/estudios/agenda')->assertOk()->assertJsonPath('data.0.paciente_id', $paciente['id'])->assertJsonPath('data.0.ci', 'VINC-123');
+        $this->postJson('/api/v1/pacientes/'.$paciente['id'].'/estudios', ['tipo' => 'LABORATORIO', 'nombre' => 'Laboratorio'])->assertCreated();
+        $this->getJson('/api/v1/estudios/agenda')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.tipo', 'TOMOGRAFIA')->assertJsonPath('data.0.paciente_id', $paciente['id'])->assertJsonPath('data.0.ci', 'VINC-123');
     }
 
     public function test_vincula_el_paciente_al_cliente_contable_con_permiso_y_credencial_interna(): void

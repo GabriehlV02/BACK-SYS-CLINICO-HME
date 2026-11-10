@@ -27,6 +27,7 @@ use App\Flows\Usuarios\Http\AuditoriaVentasController;
 use App\Flows\Usuarios\Http\RolesController;
 use App\Flows\Usuarios\Http\UsuariosController;
 use App\Http\Controllers\CitasController;
+use App\Http\Controllers\InstrumentalQuirurgicoController;
 use App\Http\Controllers\DiagnosticosController;
 use App\Http\Controllers\ConfiguracionSignosVitalesController;
 use App\Http\Controllers\PacienteFichaController;
@@ -50,9 +51,15 @@ Route::post('/recuperar-contrasena', SolicitarRecuperacionContrasenaController::
 Route::post('/restablecer-contrasena', RestablecerContrasenaController::class)->middleware('throttle:restablecer-contrasena');
 
 Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class])->group(function (): void {
+    Route::get('/v1/instrumental', [InstrumentalQuirurgicoController::class, 'index']);
+    Route::post('/v1/instrumental', [InstrumentalQuirurgicoController::class, 'store']);
+    Route::patch('/v1/instrumental/{id}/cantidad', [InstrumentalQuirurgicoController::class, 'actualizarCantidad'])->whereUuid('id');
+    Route::get('/v1/instrumental/{id}/imagen', [InstrumentalQuirurgicoController::class, 'imagen'])->whereUuid('id');
     Route::get('/v1/recepcion/ventas/opciones', [VentaProductosRecepcionController::class, 'opciones']);
     Route::get('/v1/recepcion/clientes/{cliente}/ventas', [VentaProductosRecepcionController::class, 'historial'])->whereUuid('cliente');
     Route::post('/v1/recepcion/ventas', [VentaProductosRecepcionController::class, 'store']);
+    Route::get('/v1/recepcion/ventas/solicitud/{solicitud}', [VentaProductosRecepcionController::class, 'consultarSolicitud'])->whereUuid('solicitud');
+    Route::post('/v1/recepcion/ordenes/recuperar', [VentaProductosRecepcionController::class, 'recuperarOrdenes']);
     Route::get('/v1/configuracion/signos-vitales', [ConfiguracionSignosVitalesController::class, 'index']);
     Route::get('/v1/configuracion/servicios-signos-vitales', [ServiciosSignosVitalesController::class, 'index']);
     Route::put('/v1/configuracion/servicios-signos-vitales/{servicio}', [ServiciosSignosVitalesController::class, 'update']);

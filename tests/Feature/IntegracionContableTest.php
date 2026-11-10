@@ -246,6 +246,7 @@ class IntegracionContableTest extends TestCase
         $schema->create('lotes_items', function (Blueprint $t): void {
             $t->integer('id')->primary();
             $t->integer('item_id');
+            $t->date('vencimiento')->nullable();
         });
         $schema->create('existencias_lote', function (Blueprint $t): void {
             $t->integer('id')->primary();
@@ -272,7 +273,7 @@ class IntegracionContableTest extends TestCase
         $db->table('servicios')->insert(['id' => 1, 'nombre' => 'Consulta real', 'tipo_id' => 2, 'categoria_id' => 1, 'unidad_id' => 1, 'precio_venta' => 55, 'estado' => 'ACTIVO']);
         $this->getJson('/api/catalogo')->assertUnauthorized();
         $token = $this->login();
-        $this->withToken($token)->getJson('/api/catalogo')->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('data.0.id', 'item-1')->assertJsonPath('data.0.precio', 12.5)->assertJsonPath('data.0.stock', 5.375)->assertJsonPath('data.1.id', 'servicio-1')->assertJsonPath('data.1.precio', 55);
+        $this->withToken($token)->getJson('/api/catalogo')->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('data.0.id', 'item-1')->assertJsonPath('data.0.precio', 12.5)->assertJsonPath('data.0.stock', 5.375)->assertJsonPath('data.1.id', 'servicio-1')->assertJsonPath('data.1.precio', 55)->assertJsonPath('data.1.tipoServicio', 'Servicio');
         $db->table('items_inventario')->where('id', 1)->update(['nombre_comercial' => 'Nombre actualizado']);
         $this->withToken($token)->getJson('/api/emergencias/catalogo')->assertOk()->assertJsonPath('0.nombre', 'Nombre actualizado');
         $db->table('servicios')->where('id', 1)->update(['estado' => 'INACTIVO']);

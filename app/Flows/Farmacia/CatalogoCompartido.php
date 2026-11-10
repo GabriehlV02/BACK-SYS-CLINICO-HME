@@ -33,9 +33,9 @@ class CatalogoCompartido
         $servicios = $db->table('servicios as s')->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
             ->leftJoin('unidades_inventario as u', 'u.id', '=', 's.unidad_id')->leftJoin('categorias_inventario as c', 'c.id', '=', 's.categoria_id')
             ->where('s.estado', 'ACTIVO')->where('t.activo', true)->where(fn ($q) => $q->whereNull('s.unidad_id')->orWhere('u.activo', true))->orderBy('s.nombre')->orderBy('s.id')
-            ->get(['s.id', 's.nombre', 's.precio_venta', 'u.nombre as unidad', 'c.nombre as categoria'])
+            ->get(['s.id', 's.nombre', 's.precio_venta', 't.nombre as tipo_servicio', 'u.nombre as unidad', 'c.nombre as categoria'])
             ->map(fn (object $s): array => ['id' => 'servicio-'.$s->id, 'contableId' => $s->id, 'origen' => 'CONTABLE', 'codigo' => 'SRV-'.str_pad((string) $s->id, 6, '0', STR_PAD_LEFT),
-                'nombre' => $s->nombre, 'tipo' => 'servicio', 'unidad' => $s->unidad, 'categoria' => $s->categoria ?? 'Sin categoría', 'precio' => (float) $s->precio_venta])->all();
+                'nombre' => $s->nombre, 'tipo' => 'servicio', 'tipoServicio' => $s->tipo_servicio, 'unidad' => $s->unidad, 'categoria' => $s->categoria ?? 'Sin categoría', 'precio' => (float) $s->precio_venta])->all();
 
         return [...$productos, ...$servicios];
     }

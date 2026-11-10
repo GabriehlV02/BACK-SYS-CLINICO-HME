@@ -171,4 +171,46 @@ class VentaProductosRecepcionTest extends TestCase
         $this->assertEquals(3, DB::table('existencias_lote')->where('id', 1)->value('cantidad'));
         $this->assertEquals(5, DB::table('existencias_lote')->where('id', 2)->value('cantidad'));
     }
+
+    public function test_cobro_de_imagenologia_crea_orden_y_el_reintento_no_duplica(): void
+    {
+        $db = DB::connection();
+        $db->statement('ALTER TABLE clientes ADD COLUMN paciente_id text');
+        $db->statement('ALTER TABLE tipos_inventario ADD COLUMN nombre text');
+        $db->statement('CREATE TABLE pacientes (id text primary key)');
+        $db->statement('CREATE TABLE categorias_inventario (id integer primary key, nombre text)');
+        $db->statement('CREATE TABLE servicios (id integer primary key, nombre text, precio_venta numeric, tipo_id integer, categoria_id integer, estado text)');
+        $db->statement('CREATE TABLE ventas_clinicas_ordenes (id integer primary key autoincrement, venta_detalle_id text, unidad integer, paciente_id text, tipo text, nombre text, procesada_en text, created_at text, updated_at text)');
+        $db->statement('CREATE TABLE estudios (id text primary key, paciente_id text, codigo text unique, tipo text, nombre text, estado text, estado_detalle text, solicitado_por text, solicitado_en text, venta_detalle_id text, venta_detalle_unidad integer, created_at text, updated_at text, unique (venta_detalle_id, venta_detalle_unidad))');
+        $db->statement('CREATE TABLE estudios_radiografia (id text primary key, estudio_id text unique, created_at text, updated_at text)');
+        $paciente = '33333333-3333-4333-8333-333333333333';
+        $db->table('pacientes')->insert(['id' => $paciente]);
+        $db->table('clientes')->where('id', $this->datos()['cliente_id'])->update(['paciente_id' => $paciente]);
+        $db->table('tipos_inventario')->insert(['id' => 2, 'nombre' => 'Imagenología', 'tipo_base' => 'SERVICIO', 'activo' => true]);
+        $db->table('servicios')->insert(['id' => 2, 'nombre' => 'Radiografía de tórax AP', 'precio_venta' => 120, 'tipo_id' => 2, 'estado' => 'ACTIVO']);
+        $db->table('cajas')->where('id', 1)->update(['tipos_item' => '["Productos","Servicios"]']);
+        $datos = $this->datos();
+        $datos['detalles'] = [['servicio_id' => 2, 'cantidad' => 1, 'precio_unitario' => 120]];
+        $datos['pagos'][0]['monto'] = 120;
+        $id = $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('ordenes_pendientes', false)->json('data.id');
+        $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('data.id', $id)->assertJsonPath('ordenes_pendientes', false);
+        $this->getJson('/api/v1/recepcion/ventas/solicitud/'.$datos['solicitud_id'])->assertOk()->assertJsonPath('data.id', $id);
+        $this->assertDatabaseCount('carritos_venta', 1);
+        $this->assertDatabaseCount('estudios', 1);
+        $this->assertDatabaseHas('estudios', ['paciente_id' => $paciente, 'tipo' => 'RADIOGRAFIA', 'nombre' => 'Radiografía de tórax AP']);
+        $this->assertDatabaseCount('estudios_radiografia', 1);
+        $db->table('ventas_clinicas_ordenes')->update(['procesada_en' => null]);
+        $this->postJson('/api/v1/recepcion/ordenes/recuperar')->assertOk()->assertJsonPath('ventas_revisadas', 1)->assertJsonPath('pendientes', 0);
+        $this->assertDatabaseCount('estudios', 1);
+        $db->statement('DROP TABLE estudios_radiografia');
+        $datos['solicitud_id'] = '44444444-4444-4444-8444-444444444444';
+        $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('ordenes_pendientes', true);
+        $this->assertDatabaseCount('carritos_venta', 2);
+        $this->assertDatabaseCount('estudios', 1);
+        $db->statement('CREATE TABLE estudios_radiografia (id text primary key, estudio_id text unique, created_at text, updated_at text)');
+        $this->postJson('/api/v1/recepcion/ordenes/recuperar')->assertOk()->assertJsonPath('pendientes', 0);
+        $this->assertDatabaseCount('estudios', 2);
+        $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('ordenes_pendientes', false);
+        $this->assertDatabaseCount('carritos_venta', 2);
+    }
 }
