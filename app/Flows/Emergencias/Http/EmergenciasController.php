@@ -171,6 +171,24 @@ class EmergenciasController
 
         return $this->actualizar($emergencia, function (array $ingreso) use ($consumo): array {
             $ingreso['consumos'] ??= [];
+            if ($consumo['porHora']) {
+                $registroIndex = collect($ingreso['consumos'])->search(fn (array $existente): bool => ($existente['registroId'] ?? null) === $consumo['registroId'] && ($existente['itemId'] ?? null) === $consumo['itemId'] && ($existente['porHora'] ?? false));
+                if ($registroIndex !== false) {
+                    abort_if(empty($ingreso['consumos'][$registroIndex]['fin']), 422, 'El servicio ya estÃ¡ en uso.');
+                    $acumulado = $this->duracionConsumoMs($ingreso['consumos'][$registroIndex]);
+                    foreach ($ingreso['consumos'] as $indice => $existente) {
+                        if ($indice !== $registroIndex && ($existente['itemId'] ?? null) === $consumo['itemId'] && ($existente['porHora'] ?? false) && ! empty($existente['fin'])) {
+                            $acumulado += $this->duracionConsumoMs($existente);
+                            unset($ingreso['consumos'][$indice]);
+                        }
+                    }
+                    $ingreso['consumos'][$registroIndex] = [...$ingreso['consumos'][$registroIndex], ...$consumo, 'tiempoAcumuladoMs' => $acumulado];
+                    $ingreso['consumos'] = array_values($ingreso['consumos']);
+
+                    return $ingreso;
+                }
+                $consumo['tiempoAcumuladoMs'] = 0;
+            }
             $ingreso['consumos'][] = $consumo;
 
             return $ingreso;
@@ -186,7 +204,9 @@ class EmergenciasController
             $encontrado = false;
             foreach ($ingreso['consumos'] ?? [] as &$consumo) {
                 if (($consumo['registroId'] ?? null) === $datos['registroId'] && ($consumo['porHora'] ?? false) && empty($consumo['fin'])) {
-                    $consumo['fin'] = now()->toIso8601String();
+                    $fin = now();
+                    $consumo['tiempoAcumuladoMs'] = ($consumo['tiempoAcumuladoMs'] ?? 0) + max(0, $fin->getTimestamp() - Carbon::parse($consumo['inicio'])->getTimestamp()) * 1000;
+                    $consumo['fin'] = $fin->toIso8601String();
                     $encontrado = true;
                     break;
                 }
@@ -268,6 +288,7 @@ class EmergenciasController
         $fechaCierre = now()->toIso8601String();
         foreach ($ingreso['consumos'] ?? [] as &$consumo) {
             if (($consumo['porHora'] ?? false) && empty($consumo['fin'])) {
+                $consumo['tiempoAcumuladoMs'] = $this->duracionConsumoMs($consumo) + max(0, now()->getTimestamp() - Carbon::parse($consumo['inicio'])->getTimestamp()) * 1000;
                 $consumo['fin'] = $fechaCierre;
             }
         }
@@ -280,6 +301,19 @@ class EmergenciasController
         });
 
         return response()->json($this->presentar($this->buscar($emergencia)));
+    }
+
+    /** @param array<string, mixed> $consumo */
+    private function duracionConsumoMs(array $consumo): int
+    {
+        if (isset($consumo['tiempoAcumuladoMs'])) {
+            return max(0, (int) $consumo['tiempoAcumuladoMs']);
+        }
+        if (empty($consumo['fin'])) {
+            return 0;
+        }
+
+        return max(0, Carbon::parse($consumo['fin'])->getTimestamp() - Carbon::parse($consumo['inicio'])->getTimestamp()) * 1000;
     }
 
     private function actualizar(string $id, callable $mutar): JsonResponse
