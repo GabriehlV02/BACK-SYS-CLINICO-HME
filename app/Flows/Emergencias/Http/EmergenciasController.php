@@ -255,6 +255,7 @@ class EmergenciasController
             'valores' => ['required', 'array', 'min:1', 'max:500'],
             'valores.*' => ['required'],
             'observacion' => ['nullable', 'string', 'max:1000'],
+            'fecha' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'hora' => ['sometimes', 'nullable', 'date_format:H:i'],
         ]);
 
@@ -294,7 +295,10 @@ class EmergenciasController
         }
 
         return $this->actualizar($emergencia, function (array $ingreso) use ($datos, $valores, $mediciones): array {
-            $fecha = now()->setTimeFromTimeString($datos['hora'] ?? now()->format('H:i'));
+            $fecha = Carbon::createFromFormat(
+                'Y-m-d H:i',
+                ($datos['fecha'] ?? now()->format('Y-m-d')).' '.($datos['hora'] ?? now()->format('H:i')),
+            );
             $ingreso['signos'] ??= [];
             $ingreso['signos'][] = [
                 'id' => (string) Str::uuid(),

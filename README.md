@@ -4,6 +4,7 @@ API del Sistema Cl√≠nico HME, desarrollada con Laravel. Proporciona autenticaci√
 
 [![Laravel](https://img.shields.io/badge/Laravel-13.x-FF2D20?logo=laravel&logoColor=white)](https://laravel.com/)
 [![PHP](https://img.shields.io/badge/PHP-8.3%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
+[![CI](https://github.com/GabriehlV02/BACK-SYS-CLINICO-HME/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/GabriehlV02/BACK-SYS-CLINICO-HME/actions/workflows/ci.yml)
 
 ## Responsabilidades
 
