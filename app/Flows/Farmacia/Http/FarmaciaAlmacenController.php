@@ -43,13 +43,14 @@ class FarmaciaAlmacenController
             ->join('existencias_lote as e', 'e.lote_id', '=', 'l.id')
             ->whereIn('e.almacen_id', $ids)->where('i.estado', 'ACTIVO')->where('g.estado', 'ACTIVO')
             ->where('t.activo', true)->whereIn('t.tipo_base', ['PRODUCTO', 'INSUMO'])
-            ->groupBy('i.id', 'i.nombre_comercial', 'i.clave', 'i.codigo_barras', 'u.nombre')
+            ->groupBy('i.id', 'i.nombre_comercial', 'i.marca', 'i.clave', 'i.codigo_barras', 'u.nombre')
             ->orderBy('i.nombre_comercial')->orderBy('i.id')
-            ->select(['i.id', 'i.nombre_comercial as nombre', 'i.clave', 'i.codigo_barras', 'u.nombre as unidad'])
+            ->select(['i.id', 'i.nombre_comercial as nombre', 'i.marca as fabricante', 'i.clave', 'i.codigo_barras', 'u.nombre as unidad'])
             ->selectRaw('SUM(e.cantidad) as disponible')->get()
             ->map(fn (object $item): array => [
                 'id' => (int) $item->id,
                 'nombre' => $item->nombre,
+                'fabricante' => $item->fabricante,
                 'codigo' => $item->codigo_barras ?: ($item->clave ?: 'ITM-'.str_pad((string) $item->id, 6, '0', STR_PAD_LEFT)),
                 'unidad' => $item->unidad,
                 'disponible' => (float) $item->disponible,
