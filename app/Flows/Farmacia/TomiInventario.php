@@ -8,15 +8,16 @@ use Illuminate\Support\Facades\DB;
 class TomiInventario
 {
     private const PALABRAS_IGNORADAS = ['hola', 'buenas', 'buenos', 'saludos', 'cuanto', 'cuantos', 'cuantas', 'hay', 'tengo', 'tenemos', 'stock', 'disponible', 'disponibilidad', 'producto', 'productos', 'medicamento', 'medicamentos', 'buscar', 'buscame', 'busca', 'encuentra', 'encontrar', 'item', 'items', 'vender', 'venta', 'vendere', 'vendamos', 'vencimiento', 'vence', 'vencen', 'ubicacion', 'donde', 'esta', 'estan', 'sucursal', 'almacen', 'estante', 'por', 'favor', 'debo', 'necesito', 'quiero', 'para', 'el', 'la', 'los', 'las', 'un', 'una', 'en', 'de', 'del', 'al', 'me', 'mi', 'primero', 'primera', 'mejor', 'decir', 'indicar', 'recomienda', 'recomendacion', 'prioriza', 'priorizar', 'proximo', 'proxima', 'proximos', 'proximas', 'fecha', 'lote', 'lotes', 'unidades', 'unidad', 'cajas', 'codigo', 'clave', 'marca'];
+    private const PALABRAS_OPERATIVAS = ['que', 'cual', 'cuales', 'cuando', 'queda', 'quedan', 'quedo', 'vencer', 'venceran', 'vencido', 'vencida', 'vencidos', 'vencidas', 'caduca', 'caducan', 'caducar', 'caducado', 'caducada', 'caducados', 'caducadas', 'pronto', 'prontos', 'proximo', 'proxima', 'proximos', 'proximas', 'a'];
 
     public function esConsultaInventario(string $consulta): bool
     {
         $normalizada = $this->normalizar($consulta);
-        if (preg_match('/\b(?:stock|inventario|existencias?|disponibilidad|disponible|sucursal|almacen|estante|repisa|vencimiento|vencen|lote|cantidad|medicamento|farmacia|producto|codigo|clave|vender|despachar)\b|\b[a-z]{2,}\d{3,}\b/u', $normalizada)) {
+        if (preg_match('/\b(?:stock|inventario|existencias?|disponibilidad|disponible|sucursal|almacen|estante|repisa|venc\w*|caduc\w*|lote|cantidad|medicamento|farmacia|producto|codigo|clave|vender|despachar|proxim\w* a vencer|por vencer|por caducar)\b|\b[a-z]{2,}\d{3,}\b/u', $normalizada)) {
             return true;
         }
 
-        $terminos = array_values(array_unique(array_filter(preg_split('/\s+/', $normalizada) ?: [], fn (string $termino): bool => mb_strlen($termino) > 2 && ! in_array($termino, self::PALABRAS_IGNORADAS, true) && ! ctype_digit($termino))));
+        $terminos = array_values(array_unique(array_filter(preg_split('/\s+/', $normalizada) ?: [], fn (string $termino): bool => mb_strlen($termino) > 2 && ! in_array($termino, self::PALABRAS_IGNORADAS, true) && ! in_array($termino, self::PALABRAS_OPERATIVAS, true) && ! ctype_digit($termino))));
         if ($terminos === []) {
             return false;
         }
@@ -53,9 +54,11 @@ class TomiInventario
             $solicitado = (float) str_replace(',', '.', $coincidenciaCantidad[1]);
         }
         $consultaNormalizada = $this->normalizar($consulta);
-        $terminos = array_values(array_unique(array_filter(preg_split('/\s+/', $consultaNormalizada) ?: [], fn (string $termino): bool => mb_strlen($termino) > 1 && ! in_array($termino, self::PALABRAS_IGNORADAS, true) && ! ctype_digit($termino))));
+        $terminos = array_values(array_unique(array_filter(preg_split('/\s+/', $consultaNormalizada) ?: [], fn (string $termino): bool => mb_strlen($termino) > 1 && ! in_array($termino, self::PALABRAS_IGNORADAS, true) && ! in_array($termino, self::PALABRAS_OPERATIVAS, true) && ! ctype_digit($termino))));
+        $consultaVencimientos = preg_match('/\b(venc\w*|caduc\w*|proxim\w* a vencer|por vencer|por caducar)\b/u', $consultaNormalizada) === 1;
+        $consultaVencidos = preg_match('/\b(vencid\w*|caducad\w*)\b/u', $consultaNormalizada) === 1;
 
-        if ($terminos === []) {
+        if ($terminos === [] && ! $consultaVencimientos) {
             return 'Soy TOMI y respondo consultas de inventario de farmacia: productos, cantidades, sucursales, almacenes, estantes y vencimientos. ¿Qué producto necesitas revisar?';
         }
 
@@ -105,13 +108,63 @@ class TomiInventario
             $query->whereLike('a.nombre', '%'.$consultaAlmacen.'%');
         }
 
+        if ($consultaVencimientos) {
+            $hoy = now()->toDateString();
+            $query->where('e.cantidad', '>', 0)->whereNotNull('l.vencimiento');
+            if ($consultaVencidos) {
+                $query->where('l.vencimiento', '<', $hoy);
+            } else {
+                $query->whereBetween('l.vencimiento', [$hoy, now()->addDays(30)->toDateString()]);
+            }
+            $query->orderBy('l.vencimiento')->limit(21);
+        }
+
         $lotes = $query->get([
             'i.id as item_id', 'i.producto_base_id', 'i.nombre_comercial', 'i.marca', 'i.presentacion', 'g.nombre as generico',
             'l.numero as lote', 'l.vencimiento', 'e.cantidad', 'a.id as almacen_id', 'a.nombre as almacen', 's.nombre as sucursal', 'u.ubicacion',
         ]);
 
+        if ($lotes->isEmpty() && $consultaVencimientos) {
+            return $consultaVencidos
+                ? 'No encontré lotes vencidos con existencias en los almacenes a los que tienes acceso.'
+                : 'No encontré lotes con existencias que venzan en los próximos 30 días en los almacenes a los que tienes acceso.';
+        }
         if ($lotes->isEmpty()) {
             return $this->respuestaSinCoincidencias($db, $terminosProducto, $consulta);
+        }
+
+        if ($consultaVencimientos) {
+            $hoy = now()->toDateString();
+            $limiteVencimiento = now()->addDays(30)->toDateString();
+            $lotesVencimiento = $lotes
+                ->filter(fn (object $lote): bool => (float) $lote->cantidad > 0 && $lote->vencimiento)
+                ->filter(fn (object $lote): bool => $consultaVencidos
+                    ? $lote->vencimiento < $hoy
+                    : $lote->vencimiento >= $hoy && $lote->vencimiento <= $limiteVencimiento)
+                ->sortBy('vencimiento');
+
+            if ($lotesVencimiento->isEmpty()) {
+                return $consultaVencidos
+                    ? 'No encontré lotes vencidos con existencias para esa búsqueda en los almacenes a los que tienes acceso.'
+                    : 'No encontré lotes con existencias que venzan en los próximos 30 días para esa búsqueda en los almacenes a los que tienes acceso.';
+            }
+
+            $limiteResultados = 20;
+            $respuestaVencimientos = $lotesVencimiento->take($limiteResultados)->map(function (object $lote): string {
+                $ubicacion = $lote->ubicacion ?: 'ubicación sin registrar';
+                $producto = trim($lote->generico.' '.$lote->presentacion.' ('.$lote->marca.')');
+                $fechaVencimiento = \Illuminate\Support\Carbon::parse($lote->vencimiento)->format('d/m/Y');
+
+                return $producto.' — '.$this->formatearCantidad((float) $lote->cantidad).' unidades — lote '.$lote->lote.' — vence '.$fechaVencimiento.' — '.$lote->sucursal.' / '.$lote->almacen.' — '.$ubicacion.'.';
+            })->all();
+            $tituloVencimientos = $consultaVencidos
+                ? 'Lotes vencidos con existencias:'
+                : 'Lotes con existencias que vencen en los próximos 30 días:';
+            if ($lotesVencimiento->count() > $limiteResultados) {
+                $respuestaVencimientos[] = 'La lista se limitó a '.$limiteResultados.' lotes; filtra por producto, sucursal o almacén para acotarla.';
+            }
+
+            return $tituloVencimientos."\n".implode("\n", $respuestaVencimientos);
         }
 
         $vencidas = $lotes->filter(fn (object $lote): bool => (float) $lote->cantidad > 0 && $lote->vencimiento && $lote->vencimiento < now()->toDateString());
@@ -193,7 +246,7 @@ class TomiInventario
 
     private function normalizar(string $texto): string
     {
-        return mb_strtolower(trim(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $texto) ?: $texto));
+        return TomiTexto::normalizar($texto);
     }
 
     private function formatearCantidad(float $cantidad): string

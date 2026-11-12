@@ -157,11 +157,15 @@ class EmergenciasController
             'frecuencia' => ['nullable', 'string', 'max:200'], 'duracion' => ['nullable', 'string', 'max:200'],
             'itemId' => ['nullable', 'string', 'max:100'], 'porHora' => ['nullable', 'boolean'],
         ]);
+        $usuario = $request->user();
+        $roles = app(\App\Flows\Autenticacion\AccesoCompartido::class)->roles((string) $usuario->id)->get(['r.codigo', 'r.nombre']);
+        $esMedico = $roles->contains(fn (object $rol): bool => str_contains(mb_strtolower($rol->codigo.' '. $rol->nombre), 'medic') || str_contains(mb_strtolower($rol->codigo.' '. $rol->nombre), 'médic'));
+        abort_if($datos['tipo'] === 'internacion' && ! $esMedico, 403, 'Solo un médico puede emitir una orden de hospitalización o internación.');
         abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden registrar órdenes.');
 
-        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos, $usuario, $esMedico): array {
             $ordenes = $ingreso['ordenes'] ?? [];
-            $ordenes[] = [...$datos, 'id' => (string) Str::uuid(), 'revision' => 1, 'fecha' => now()->toIso8601String(), 'usuario' => 'Profesional de turno', 'estado' => 'pendiente', 'aplicaciones' => [], 'historial' => []];
+            $ordenes[] = [...$datos, 'id' => (string) Str::uuid(), 'revision' => 1, 'fecha' => now()->toIso8601String(), 'usuario' => trim(($usuario->nombres ?? '').' '.($usuario->apellidos ?? '')) ?: 'Profesional de turno', 'autorId' => $usuario->id, 'autorTipo' => $esMedico ? 'medico' : 'otro', 'estado' => 'pendiente', 'aplicaciones' => [], 'historial' => []];
             $ingreso['ordenes'] = $ordenes;
 
             return $ingreso;
