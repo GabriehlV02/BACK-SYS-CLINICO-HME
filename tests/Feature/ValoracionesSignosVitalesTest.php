@@ -73,6 +73,68 @@ class ValoracionesSignosVitalesTest extends TestCase
         $this->postJson('/api/v1/citas/1/signos-vitales', ['valores' => ['temperatura' => '36']])->assertForbidden();
     }
 
+    public function test_historial_por_paciente_agrega_consultas_y_emergencias_sin_mezclar_pacientes(): void
+    {
+        Schema::dropIfExists('emergencias');
+        Schema::dropIfExists('atenciones');
+        Schema::create('atenciones', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->uuid('paciente_id')->nullable();
+            $table->string('tipo');
+            $table->timestamp('iniciada_en')->nullable();
+        });
+        Schema::create('emergencias', function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->uuid('atencion_id');
+            $table->string('codigo_emergencia');
+            $table->text('datos_ingreso')->nullable();
+        });
+        DB::table('valoraciones_signos_vitales')->insert([
+            'cita_id' => 1,
+            'registrado_por' => '33333333-3333-4333-8333-333333333333',
+            'mediciones' => json_encode([['id' => 'temperatura', 'nombre' => 'Temperatura', 'unidad' => '°C', 'valor' => '36.7']], JSON_THROW_ON_ERROR),
+            'created_at' => '2026-01-01 10:00:00',
+        ]);
+        DB::table('valoraciones_signos_vitales')->insert([
+            'cita_id' => 3,
+            'registrado_por' => '33333333-3333-4333-8333-333333333333',
+            'mediciones' => json_encode([['id' => 'temperatura', 'valor' => '39']], JSON_THROW_ON_ERROR),
+            'created_at' => '2026-01-01 11:00:00',
+        ]);
+        DB::table('atenciones')->insert([
+            'id' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'paciente_id' => '11111111-1111-4111-8111-111111111111',
+            'tipo' => 'emergencia',
+            'iniciada_en' => '2026-01-02 08:00:00',
+        ]);
+        DB::table('emergencias')->insert([
+            'id' => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'atencion_id' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'codigo_emergencia' => 'EMG-TEST',
+            'datos_ingreso' => json_encode(['signos' => [[
+                'id' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+                'fecha' => '2026-01-02T08:30:00+00:00',
+                'valores' => ['saturacion' => 98],
+                'observacion' => 'Control inicial',
+            ]]], JSON_THROW_ON_ERROR),
+        ]);
+
+        $this->mock(AccesoCompartido::class)
+            ->shouldReceive('exigir')
+            ->once()
+            ->with('33333333-3333-4333-8333-333333333333', 'SIGNOS_VITALES_REGISTRAR');
+
+        $this->getJson('/api/v1/pacientes/11111111-1111-4111-8111-111111111111/signos-vitales')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.servicioId', 'consulta-ambulatoria')
+            ->assertJsonPath('data.0.mediciones.0.valor', '36.7')
+            ->assertJsonPath('data.1.servicioId', 'emergencias')
+            ->assertJsonPath('data.1.contexto', 'Atención EMG-TEST')
+            ->assertJsonPath('data.1.mediciones.0.id', 'saturacionAmbiente')
+            ->assertJsonPath('data.1.mediciones.0.valor', '98');
+    }
+
     public function test_medico_solo_accede_a_citas_de_su_perfil(): void
     {
         config(['database.connections.usuarios' => [...config('database.connections.sqlite'), 'database' => ':memory:']]);

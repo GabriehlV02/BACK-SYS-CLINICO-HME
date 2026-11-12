@@ -73,6 +73,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
     Route::get('/citas', [CitasController::class, 'index']);
     Route::get('/v1/citas/{cita}/signos-vitales', [ValoracionesSignosVitalesController::class, 'show'])->whereNumber('cita');
     Route::post('/v1/citas/{cita}/signos-vitales', [ValoracionesSignosVitalesController::class, 'store'])->whereNumber('cita');
+    Route::get('/v1/pacientes/{paciente}/signos-vitales', [ValoracionesSignosVitalesController::class, 'historialPaciente'])->whereUuid('paciente');
     Route::post('/citas', [CitasController::class, 'store']);
     Route::patch('/citas/{cita}/estado', [CitasController::class, 'estado'])->whereNumber('cita');
     Route::get('/session', [SesionCompartidaController::class, 'show']);

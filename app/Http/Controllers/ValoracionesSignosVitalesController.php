@@ -59,6 +59,71 @@ class ValoracionesSignosVitalesController extends Controller
         return response()->json(['data' => $this->presentar(DB::table('valoraciones_signos_vitales')->where('id', $id)->first())], 201);
     }
 
+    public function historialPaciente(Request $request, string $paciente, AccesoCompartido $acceso): JsonResponse
+    {
+        $acceso->exigir($request->user()->id, 'SIGNOS_VITALES_REGISTRAR');
+        $historial = [];
+
+        $valoraciones = DB::table('valoraciones_signos_vitales as v')
+            ->join('citas as c', 'c.id', '=', 'v.cita_id')
+            ->where('c.paciente_id', $paciente)
+            ->orderBy('v.created_at')
+            ->orderBy('v.id')
+            ->get(['v.id', 'v.cita_id', 'v.mediciones', 'v.created_at']);
+
+        foreach ($valoraciones as $valoracion) {
+            $historial[] = [
+                'id' => 'cita-'.$valoracion->cita_id.'-'.$valoracion->id,
+                'fecha' => $valoracion->created_at,
+                'servicioId' => 'consulta-ambulatoria',
+                'servicio' => 'Consulta ambulatoria',
+                'contexto' => 'Cita '.$valoracion->cita_id,
+                'observacion' => '',
+                'mediciones' => json_decode($valoracion->mediciones, true, 512, JSON_THROW_ON_ERROR),
+            ];
+        }
+
+        $catalogo = DB::table('configuracion_signos_vitales')->get()->keyBy('id');
+        $emergencias = DB::table('emergencias as e')
+            ->join('atenciones as a', 'a.id', '=', 'e.atencion_id')
+            ->where('a.paciente_id', $paciente)
+            ->where('a.tipo', 'emergencia')
+            ->orderBy('a.iniciada_en')
+            ->get(['e.id', 'e.codigo_emergencia', 'e.datos_ingreso', 'a.iniciada_en']);
+
+        foreach ($emergencias as $emergencia) {
+            $ingreso = json_decode($emergencia->datos_ingreso ?? '[]', true, 512, JSON_THROW_ON_ERROR);
+            foreach ($ingreso['signos'] ?? [] as $signo) {
+                $mediciones = $signo['mediciones'] ?? [];
+                if (! $mediciones) {
+                    foreach ($signo['valores'] ?? [] as $id => $valor) {
+                        $id = $id === 'saturacion' ? 'saturacionAmbiente' : (string) $id;
+                        $definicion = $catalogo->get($id);
+                        $mediciones[] = [
+                            'id' => $id,
+                            'nombre' => $definicion->nombre ?? $id,
+                            'unidad' => $definicion->abreviatura ?? '',
+                            'valor' => (string) $valor,
+                        ];
+                    }
+                }
+                $historial[] = [
+                    'id' => 'emergencia-'.$emergencia->id.'-'.$signo['id'],
+                    'fecha' => $signo['fecha'] ?? $emergencia->iniciada_en,
+                    'servicioId' => 'emergencias',
+                    'servicio' => 'Emergencias',
+                    'contexto' => 'Atención '.$emergencia->codigo_emergencia,
+                    'observacion' => $signo['observacion'] ?? '',
+                    'mediciones' => $mediciones,
+                ];
+            }
+        }
+
+        usort($historial, fn (array $a, array $b): int => strcmp($a['fecha'], $b['fecha']));
+
+        return response()->json(['data' => $historial]);
+    }
+
     private function autorizar(Request $request, int $cita, AccesoCompartido $acceso, bool $escritura = false): void
     {
         $usuarioId = $request->user()->id;

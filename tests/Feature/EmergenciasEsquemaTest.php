@@ -44,4 +44,24 @@ class EmergenciasEsquemaTest extends TestCase
         $this->assertDatabaseHas('emergencias', ['id' => $id, 'ubicacion_activa' => null]);
         $this->postJson('/api/emergencias', ['cubiculo' => '1'])->assertCreated();
     }
+
+    public function test_signos_de_emergencia_respetan_la_configuracion_del_servicio(): void
+    {
+        $this->withoutMiddleware(VerificarSesionCompartida::class);
+        $id = $this->postJson('/api/emergencias', ['cubiculo' => '4'])->assertCreated()->json('id');
+        DB::table('servicio_signo_vital')->where('servicio_id', 'emergencias')->delete();
+        DB::table('servicio_signo_vital')->insert([
+            'servicio_id' => 'emergencias',
+            'signo_id' => 'temperatura',
+        ]);
+
+        $this->postJson("/api/emergencias/{$id}/signos", [
+            'valores' => ['temperatura' => '36.7'],
+        ])->assertOk()
+            ->assertJsonPath('signos.0.valores.temperatura', '36.7')
+            ->assertJsonPath('signos.0.mediciones.0.nombre', 'Temperatura');
+        $this->postJson("/api/emergencias/{$id}/signos", [
+            'valores' => ['peso' => '70'],
+        ])->assertUnprocessable();
+    }
 }

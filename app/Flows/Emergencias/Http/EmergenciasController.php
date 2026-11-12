@@ -252,22 +252,55 @@ class EmergenciasController
     public function signos(Request $request, string $emergencia): JsonResponse
     {
         $datos = $request->validate([
-            'valores' => ['required', 'array', 'min:1'],
-            'valores.*' => ['numeric', 'min:0'],
+            'valores' => ['required', 'array', 'min:1', 'max:500'],
+            'valores.*' => ['required'],
             'observacion' => ['nullable', 'string', 'max:1000'],
-            'hora' => ['required', 'date_format:H:i'],
+            'hora' => ['sometimes', 'nullable', 'date_format:H:i'],
         ]);
 
         $cuenta = $this->buscar($emergencia);
         abort_if($cuenta->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden registrar signos vitales.');
+        $definiciones = DB::table('configuracion_signos_vitales as s')
+            ->join('servicio_signo_vital as ss', 'ss.signo_id', '=', 's.id')
+            ->where('ss.servicio_id', 'emergencias')
+            ->where('s.activo', true)
+            ->select('s.*')
+            ->get();
+        $permitidos = [];
+        foreach ($definiciones as $signo) {
+            $componentes = $signo->componentes ? json_decode($signo->componentes, true, 512, JSON_THROW_ON_ERROR) : [];
+            if ($componentes) {
+                foreach ($componentes as $componente) {
+                    $id = $signo->id.'::'.$componente['id'];
+                    $permitidos[$id] = ['nombre' => $signo->nombre.' · '.$componente['nombre'], 'unidad' => $signo->abreviatura, 'tipo' => 'Número decimal'];
+                }
+            } else {
+                $permitidos[$signo->id] = ['nombre' => $signo->nombre, 'unidad' => $signo->abreviatura, 'tipo' => $signo->tipo];
+            }
+        }
+        $valores = [];
+        $mediciones = [];
+        foreach ($datos['valores'] as $id => $valor) {
+            $definicion = $permitidos[$id] ?? null;
+            if (! $definicion || (! is_string($valor) && ! is_numeric($valor)) || ! trim((string) $valor)) {
+                throw ValidationException::withMessages(['valores' => 'Solo se permiten signos asignados y valores válidos.']);
+            }
+            $valor = trim((string) $valor);
+            if ($definicion['tipo'] !== 'Texto' && (! is_numeric($valor) || ! is_finite((float) $valor) || ($definicion['tipo'] === 'Número entero' && floor((float) $valor) !== (float) $valor))) {
+                throw ValidationException::withMessages(['valores' => 'Una medición no corresponde al tipo de dato configurado.']);
+            }
+            $valores[$id] = $valor;
+            $mediciones[] = ['id' => $id, ...$definicion, 'valor' => $valor];
+        }
 
-        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
-            $fecha = now()->setTimeFromTimeString($datos['hora']);
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos, $valores, $mediciones): array {
+            $fecha = now()->setTimeFromTimeString($datos['hora'] ?? now()->format('H:i'));
             $ingreso['signos'] ??= [];
             $ingreso['signos'][] = [
                 'id' => (string) Str::uuid(),
                 'fecha' => $fecha->toIso8601String(),
-                'valores' => $datos['valores'],
+                'valores' => $valores,
+                'mediciones' => $mediciones,
                 'observacion' => $datos['observacion'] ?? '',
             ];
             usort($ingreso['signos'], fn (array $a, array $b): int => strcmp($a['fecha'], $b['fecha']));
@@ -412,6 +445,13 @@ class EmergenciasController
     {
         $ingreso = json_decode($emergencia->datos_ingreso ?? '[]', true) ?: [];
         $identidad = $ingreso['identidad'] ?? json_decode($emergencia->identidad_provisional ?? 'null', true);
+        $signos = $ingreso['signos'] ?? [];
+        foreach ($signos as &$signo) {
+            if (isset($signo['valores']['saturacion']) && ! isset($signo['valores']['saturacionAmbiente'])) {
+                $signo['valores']['saturacionAmbiente'] = $signo['valores']['saturacion'];
+            }
+        }
+        unset($signo);
 
         return [
             'id' => $emergencia->id,
@@ -421,7 +461,7 @@ class EmergenciasController
             'fin' => $emergencia->finalizada_en,
             'revision' => crc32($emergencia->datos_ingreso ?? ''),
             'identidad' => $identidad,
-            'signos' => $ingreso['signos'] ?? [],
+            'signos' => $signos,
             'consumos' => $ingreso['consumos'] ?? [],
             'evaluaciones' => $ingreso['evaluaciones'] ?? [],
             'ordenes' => $ingreso['ordenes'] ?? [],
