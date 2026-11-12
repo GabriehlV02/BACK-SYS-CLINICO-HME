@@ -116,6 +116,37 @@ class EmergenciasController
         });
     }
 
+    public function editarEvaluacion(Request $request, string $emergencia, string $evaluacion): JsonResponse
+    {
+        $datos = $request->validate([
+            'revision' => ['required', 'integer', 'min:0'],
+            'campos' => ['required', 'array'],
+            'campos.*' => ['nullable', 'string', 'max:5000'],
+        ]);
+        abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden editar evoluciones.');
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos, $evaluacion): array {
+            $evaluaciones = $ingreso['evaluaciones'] ?? [];
+            $indice = collect($evaluaciones)->search(fn (array $item): bool => ($item['id'] ?? null) === $evaluacion);
+            abort_if($indice === false, 404, 'No se encontró la anotación seleccionada.');
+
+            $actual = $evaluaciones[$indice];
+            $actual['historialEdiciones'] ??= [];
+            $actual['historialEdiciones'][] = [
+                'fecha' => now()->toIso8601String(),
+                'usuario' => 'Profesional de turno',
+                'campos' => $actual['campos'] ?? [],
+            ];
+            $actual['campos'] = array_merge($actual['campos'] ?? [], $datos['campos']);
+            $actual['editadoEn'] = now()->toIso8601String();
+            $actual['editadoPor'] = 'Profesional de turno';
+            $evaluaciones[$indice] = $actual;
+            $ingreso['evaluaciones'] = $evaluaciones;
+
+            return $ingreso;
+        });
+    }
+
     public function orden(Request $request, string $emergencia): JsonResponse
     {
         $datos = $request->validate([

@@ -101,6 +101,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
         Route::post('/', 'store');
         Route::get('/catalogo', 'catalogo');
         Route::post('/{emergencia}/evaluacion', 'evaluacion');
+        Route::post('/{emergencia}/evaluacion/{evaluacion}/editar', 'editarEvaluacion');
         Route::post('/{emergencia}/orden', 'orden');
         Route::post('/{emergencia}/uso-enfermeria', 'usoEnfermeria');
         Route::post('/{emergencia}/consumos', 'consumo');
