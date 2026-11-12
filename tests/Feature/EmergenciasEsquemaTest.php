@@ -24,7 +24,7 @@ class EmergenciasEsquemaTest extends TestCase
         $this->assertDatabaseHas('atenciones', [
             'id' => $atencion,
             'paciente_id' => null,
-            'iniciada_en' => '2026-10-29 15:35:00',
+            'iniciada_en' => \Illuminate\Support\Carbon::parse('2026-10-29T15:35:00.000Z')->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
         ]);
         $this->postJson('/api/emergencias', ['cubiculo' => '3', 'inicio' => 'fecha inválida'])->assertUnprocessable();
     }

@@ -18,6 +18,19 @@ class SincronizarOrdenVenta
             ->whereNull('o.procesada_en')->orderBy('o.id')->get(['o.*']);
 
         foreach ($pendientes as $orden) {
+            if ($orden->tipo === 'CONSULTA') {
+                DB::transaction(function () use ($orden): void {
+                    $cita = DB::table('citas')->where('id', $orden->cita_id)->lockForUpdate()->first();
+                    if (! $cita || $cita->paciente_id !== $orden->paciente_id || ! in_array($cita->estado, ['por_confirmar', 'confirmada'], true)) {
+                        throw new RuntimeException('La consulta cobrada no esta disponible para confirmar.');
+                    }
+                    if ($cita->estado === 'por_confirmar') {
+                        DB::table('citas')->where('id', $cita->id)->update(['estado' => 'confirmada', 'updated_at' => now()]);
+                    }
+                }, 3);
+                $contable->table('ventas_clinicas_ordenes')->where('id', $orden->id)->whereNull('procesada_en')->update(['procesada_en' => now(), 'updated_at' => now()]);
+                continue;
+            }
             if (! in_array($orden->tipo, ['RADIOGRAFIA', 'TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'LABORATORIO'], true)) {
                 throw new RuntimeException('Tipo de estudio no admitido.');
             }

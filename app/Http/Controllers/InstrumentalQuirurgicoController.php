@@ -24,6 +24,8 @@ class InstrumentalQuirurgicoController extends Controller
             'codigo' => ['required', 'string', 'max:80', Rule::unique('instrumental_quirurgico', 'codigo')],
             'nombre' => ['required', 'string', 'max:180'],
             'lote' => ['nullable', 'string', 'max:100'],
+            'medida' => ['nullable', 'string', 'max:100'],
+            'cuenta_con_logo' => ['sometimes', 'boolean'],
             'cantidad' => ['required', 'integer', 'min:1', 'max:1000000'],
             'descripcion' => ['nullable', 'string', 'max:5000'],
             'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
@@ -37,7 +39,7 @@ class InstrumentalQuirurgicoController extends Controller
             $id = (string) Str::uuid();
             DB::table('instrumental_quirurgico')->insert([
                 'id' => $id, 'codigo' => Str::upper(trim($data['codigo'])), 'nombre' => trim($data['nombre']),
-                'lote' => $data['lote'] ?? null, 'cantidad' => $data['cantidad'],
+                'lote' => $data['lote'] ?? null, 'medida' => $data['medida'] ?? null, 'cuenta_con_logo' => $request->boolean('cuenta_con_logo'), 'cantidad' => $data['cantidad'],
                 'descripcion' => $data['descripcion'] ?? null, 'ubicacion' => 'Almacén esterilización',
                 'estado' => 'pendiente', 'imagen_ruta' => $ruta, 'created_at' => now(), 'updated_at' => now(),
             ]);

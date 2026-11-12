@@ -29,6 +29,9 @@ class VentaProductosRecepcionTest extends TestCase
             'cajas (id integer primary key, nombre text, codigo text, sucursal_id integer, tipos_item text, activo boolean)',
             'almacenes_inventario (id integer primary key, nombre text, sucursal_id integer, tipos_item text, activo boolean)',
             'almacen_caja (caja_id integer, almacen_id integer)',
+            'caja_usuario (caja_id integer, usuario_id text)',
+            'sucursal_usuario (sucursal_id integer, usuario_id text)',
+            'almacen_usuario (almacen_id integer, usuario_id text)',
             'clientes (id text primary key)',
             'tipos_inventario (id integer primary key, tipo_base text, activo boolean)',
             'productos_base (id integer primary key, tipo_id integer, estado text)',
@@ -48,6 +51,9 @@ class VentaProductosRecepcionTest extends TestCase
         $db->table('cajas')->insert(['id' => 1, 'nombre' => 'Caja', 'codigo' => 'CAJ', 'sucursal_id' => 1, 'tipos_item' => '["Productos"]', 'activo' => true]);
         $db->table('almacenes_inventario')->insert(['id' => 1, 'nombre' => 'Almacén', 'sucursal_id' => 1, 'tipos_item' => '["Productos","Insumos"]', 'activo' => true]);
         $db->table('almacen_caja')->insert(['caja_id' => 1, 'almacen_id' => 1]);
+        $db->table('caja_usuario')->insert(['caja_id' => 1, 'usuario_id' => 'user']);
+        $db->table('sucursal_usuario')->insert(['sucursal_id' => 1, 'usuario_id' => 'user']);
+        $db->table('almacen_usuario')->insert(['almacen_id' => 1, 'usuario_id' => 'user']);
         $db->table('clientes')->insert(['id' => '11111111-1111-4111-8111-111111111111']);
         $db->table('tipos_inventario')->insert(['id' => 1, 'tipo_base' => 'PRODUCTO', 'activo' => true]);
         $db->table('productos_base')->insert(['id' => 1, 'tipo_id' => 1, 'estado' => 'ACTIVO']);
@@ -180,7 +186,7 @@ class VentaProductosRecepcionTest extends TestCase
         $db->statement('CREATE TABLE pacientes (id text primary key)');
         $db->statement('CREATE TABLE categorias_inventario (id integer primary key, nombre text)');
         $db->statement('CREATE TABLE servicios (id integer primary key, nombre text, precio_venta numeric, tipo_id integer, categoria_id integer, estado text)');
-        $db->statement('CREATE TABLE ventas_clinicas_ordenes (id integer primary key autoincrement, venta_detalle_id text, unidad integer, paciente_id text, tipo text, nombre text, procesada_en text, created_at text, updated_at text)');
+        $db->statement('CREATE TABLE ventas_clinicas_ordenes (id integer primary key autoincrement, venta_detalle_id text, unidad integer, paciente_id text, tipo text, cita_id integer unique, nombre text, procesada_en text, created_at text, updated_at text)');
         $db->statement('CREATE TABLE estudios (id text primary key, paciente_id text, codigo text unique, tipo text, nombre text, estado text, estado_detalle text, solicitado_por text, solicitado_en text, venta_detalle_id text, venta_detalle_unidad integer, created_at text, updated_at text, unique (venta_detalle_id, venta_detalle_unidad))');
         $db->statement('CREATE TABLE estudios_radiografia (id text primary key, estudio_id text unique, created_at text, updated_at text)');
         $paciente = '33333333-3333-4333-8333-333333333333';
@@ -191,7 +197,10 @@ class VentaProductosRecepcionTest extends TestCase
         $db->table('cajas')->where('id', 1)->update(['tipos_item' => '["Productos","Servicios"]']);
         $datos = $this->datos();
         $datos['detalles'] = [['servicio_id' => 2, 'cantidad' => 1, 'precio_unitario' => 120]];
-        $datos['pagos'][0]['monto'] = 120;
+        unset($datos['caja_id'], $datos['almacen_id']);
+        $datos['usar_asignacion_usuario'] = true;
+        $datos['pagos'] = [['metodo' => 'Efectivo', 'monto' => 60], ['metodo' => 'QR', 'monto' => 60]];
+        $this->getJson('/api/v1/recepcion/ventas/opciones')->assertOk()->assertJsonPath('asignacion_usuario.caja_id', 1)->assertJsonPath('asignacion_usuario.almacen_id', 1);
         $id = $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('ordenes_pendientes', false)->json('data.id');
         $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('data.id', $id)->assertJsonPath('ordenes_pendientes', false);
         $this->getJson('/api/v1/recepcion/ventas/solicitud/'.$datos['solicitud_id'])->assertOk()->assertJsonPath('data.id', $id);
@@ -213,4 +222,36 @@ class VentaProductosRecepcionTest extends TestCase
         $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('ordenes_pendientes', false);
         $this->assertDatabaseCount('carritos_venta', 2);
     }
+    public function test_cobro_de_consulta_confirma_cita_y_evitar_doble_venta(): void
+    {
+        $db = DB::connection();
+        $db->statement('ALTER TABLE clientes ADD COLUMN paciente_id text');
+        $db->statement('ALTER TABLE tipos_inventario ADD COLUMN nombre text');
+        $db->statement('CREATE TABLE pacientes (id text primary key)');
+        $db->statement('CREATE TABLE citas (id integer primary key, paciente_id text, servicio_id integer, estado text, updated_at text)');
+        $db->statement('CREATE TABLE categorias_inventario (id integer primary key, nombre text)');
+        $db->statement('CREATE TABLE servicios (id integer primary key, nombre text, precio_venta numeric, tipo_id integer, categoria_id integer, estado text)');
+        $db->statement('CREATE TABLE ventas_clinicas_ordenes (id integer primary key autoincrement, venta_detalle_id text, unidad integer, paciente_id text, tipo text, cita_id integer unique, nombre text, procesada_en text, created_at text, updated_at text)');
+        $paciente = '33333333-3333-4333-8333-333333333333';
+        $db->table('pacientes')->insert(['id' => $paciente]);
+        $db->table('clientes')->where('id', $this->datos()['cliente_id'])->update(['paciente_id' => $paciente]);
+        $db->table('tipos_inventario')->insert(['id' => 2, 'nombre' => 'CONSULTA', 'tipo_base' => 'SERVICIO', 'activo' => true]);
+        $db->table('servicios')->insert(['id' => 2, 'nombre' => 'Consulta', 'precio_venta' => 120, 'tipo_id' => 2, 'estado' => 'ACTIVO']);
+        $db->table('cajas')->where('id', 1)->update(['tipos_item' => '["Productos","Servicios"]']);
+        $db->table('citas')->insert(['id' => 10, 'paciente_id' => $paciente, 'servicio_id' => 2, 'estado' => 'por_confirmar']);
+        $datos = $this->datos();
+        $datos['detalles'] = [['servicio_id' => 2, 'cita_id' => 10, 'cantidad' => 1, 'precio_unitario' => 120]];
+        unset($datos['caja_id'], $datos['almacen_id']);
+        $datos['usar_asignacion_usuario'] = true;
+        $datos['pagos'] = [['metodo' => 'Efectivo', 'monto' => 60], ['metodo' => 'QR', 'monto' => 60]];
+        $id = $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('ordenes_pendientes', false)->json('data.id');
+        $this->assertDatabaseHas('citas', ['id' => 10, 'estado' => 'confirmada']);
+        $this->assertDatabaseHas('carritos_venta', ['id' => $id, 'caja_id' => 1, 'total' => 120]);
+        $this->assertCount(2, json_decode($db->table('ventas_clinicas_solicitudes')->where('venta_id', $id)->value('pagos'), true));
+        $this->postJson('/api/v1/recepcion/ventas', $datos)->assertCreated()->assertJsonPath('data.id', $id);
+        $datos['solicitud_id'] = '55555555-5555-4555-8555-555555555555';
+        $this->postJson('/api/v1/recepcion/ventas', $datos)->assertUnprocessable();
+        $this->assertDatabaseCount('carritos_venta', 1);
+    }
+
 }

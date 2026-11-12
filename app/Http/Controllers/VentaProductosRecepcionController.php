@@ -40,6 +40,16 @@ class VentaProductosRecepcionController extends Controller
                 ->whereExists(fn ($q) => $q->selectRaw('1')->from('sucursal_usuario as su')->whereColumn('su.sucursal_id', 's.id')->where('su.usuario_id', $id)));
     }
 
+    private function asignacionesVenta(Connection $db, string $usuarioId)
+    {
+        return $this->cajas($db, $usuarioId, false)
+            ->join('almacen_caja as ac', 'ac.caja_id', '=', 'c.id')
+            ->join('almacenes_inventario as a', 'a.id', '=', 'ac.almacen_id')
+            ->where('a.activo', true)->whereColumn('a.sucursal_id', 's.id')
+            ->whereExists(fn ($q) => $q->selectRaw('1')->from('almacen_usuario as au')->whereColumn('au.almacen_id', 'a.id')->where('au.usuario_id', $usuarioId))
+            ->select('c.id as caja_id', 'a.id as almacen_id')->distinct()->get();
+    }
+
     public function opciones(Request $request, AccesoCompartido $acceso): JsonResponse
     {
         $admin = $this->autorizar($request, $acceso);
@@ -52,7 +62,9 @@ class VentaProductosRecepcionController extends Controller
             ->when(! $admin, fn ($q) => $q->whereExists(fn ($q) => $q->selectRaw('1')->from('almacen_usuario as au')->whereColumn('au.almacen_id', 'a.id')->where('au.usuario_id', $id)))
             ->orderBy('a.nombre')->get(['ac.caja_id', 'a.id', 'a.nombre']);
 
-        return response()->json(['data' => $cajas->map(fn ($caja) => ['id' => $caja->id, 'nombre' => $caja->nombre, 'codigo' => $caja->codigo, 'sucursal_id' => $caja->sucursal_id, 'sucursal' => $caja->sucursal, 'almacenes' => $almacenes->where('caja_id', $caja->id)->values()])]);
+        $asignaciones = $this->asignacionesVenta($db, $id);
+
+        return response()->json(['data' => $cajas->map(fn ($caja) => ['id' => $caja->id, 'nombre' => $caja->nombre, 'codigo' => $caja->codigo, 'sucursal_id' => $caja->sucursal_id, 'sucursal' => $caja->sucursal, 'almacenes' => $almacenes->where('caja_id', $caja->id)->values()]), 'asignacion_usuario' => $asignaciones->count() === 1 ? $asignaciones->first() : null, 'cantidad_asignaciones' => $asignaciones->count()]);
     }
 
     public function historial(Request $request, string $cliente, AccesoCompartido $acceso): JsonResponse
@@ -88,6 +100,13 @@ class VentaProductosRecepcionController extends Controller
     public function store(Request $request, AccesoCompartido $acceso): JsonResponse
     {
         $admin = $this->autorizar($request, $acceso);
+        if ($request->boolean('usar_asignacion_usuario')) {
+            $asignaciones = $this->asignacionesVenta($acceso->conexion(), $request->user()->id);
+            if ($asignaciones->count() !== 1) {
+                throw ValidationException::withMessages(['caja_id' => 'El usuario debe tener una sola caja y almacén asignados para este cobro.']);
+            }
+            $request->merge(['caja_id' => $asignaciones->first()->caja_id, 'almacen_id' => $asignaciones->first()->almacen_id]);
+        }
         $datos = $request->validate([
             'solicitud_id' => ['required', 'uuid'], 'cliente_id' => ['required', 'uuid'],
             'caja_id' => ['required', 'integer'], 'almacen_id' => ['required', 'integer'],
@@ -95,6 +114,7 @@ class VentaProductosRecepcionController extends Controller
             'detalles' => ['required', 'array', 'min:1', 'max:100'],
             'detalles.*.item_id' => ['required_without:detalles.*.servicio_id', 'integer', 'distinct'],
             'detalles.*.servicio_id' => ['required_without:detalles.*.item_id', 'integer', 'distinct'],
+            'detalles.*.cita_id' => ['sometimes', 'integer', 'min:1', 'distinct'],
             'detalles.*.cantidad' => ['required', 'integer', 'min:1', 'max:100000'],
             'detalles.*.precio_unitario' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
             'pagos' => ['required', 'array', 'min:1', 'max:10'],
@@ -142,7 +162,20 @@ class VentaProductosRecepcionController extends Controller
             foreach ($lineas as $linea) {
                 if (isset($linea['servicio_id'])) {
                     $servicio = $servicios->get($linea['servicio_id']);
-                    if (! $servicio || ! $this->tipoEstudio($servicio) || $linea['cantidad'] > 100) {
+                    $esConsulta = $servicio && str_contains(strtoupper(Str::ascii($servicio->tipo_servicio)), 'CONSULTA');
+                    if ($esConsulta) {
+                        if (empty($linea['cita_id']) || (int) $linea['cantidad'] !== 1) {
+                            throw ValidationException::withMessages(['detalles' => 'Selecciona una consulta agendada por cada servicio de consulta.']);
+                        }
+                        $cita = \Illuminate\Support\Facades\DB::table('citas')->where('id', $linea['cita_id'])->where('paciente_id', $pacienteId)
+                            ->where('servicio_id', $servicio->id)->where('estado', 'por_confirmar')->first();
+                        if (! $cita || $db->table('ventas_clinicas_ordenes')->where('cita_id', $linea['cita_id'])->exists()) {
+                            throw ValidationException::withMessages(['detalles' => 'La consulta no esta pendiente, no corresponde al paciente o ya tiene una venta.']);
+                        }
+                    } elseif (! empty($linea['cita_id'])) {
+                        throw ValidationException::withMessages(['detalles' => 'La cita solo puede asociarse a un servicio de consulta.']);
+                    }
+                    if (! $servicio || (! $esConsulta && ! $this->tipoEstudio($servicio)) || $linea['cantidad'] > 100) {
                         throw ValidationException::withMessages(['detalles' => 'Selecciona un servicio de imagenología activo y reconocido.']);
                     }
                     if (! in_array('Servicios', json_decode($caja->tipos_item, true) ?? [], true)) {
@@ -194,8 +227,9 @@ class VentaProductosRecepcionController extends Controller
                     $servicio = $servicios->get($linea['servicio_id']);
                     $detalleId = (string) Str::uuid();
                     $db->table('carrito_venta_detalles')->insert(['id' => $detalleId, 'carrito_venta_id' => $ventaId, 'codigo_item' => 'SRV-'.str_pad((string) $servicio->id, 6, '0', STR_PAD_LEFT), 'nombre_item' => $servicio->nombre, 'tipo_item' => 'Servicio', 'cantidad' => $linea['cantidad'], 'precio_unitario' => $servicio->precio_venta, 'descuento' => 0, 'total' => round((float) $servicio->precio_venta * $linea['cantidad'], 2), 'created_at' => $ahora, 'updated_at' => $ahora]);
+                    $tipoOrden = ! empty($linea['cita_id']) ? 'CONSULTA' : $this->tipoEstudio($servicio);
                     for ($unidad = 1; $unidad <= $linea['cantidad']; $unidad++) {
-                        $db->table('ventas_clinicas_ordenes')->insert(['venta_detalle_id' => $detalleId, 'unidad' => $unidad, 'paciente_id' => $pacienteId, 'tipo' => $this->tipoEstudio($servicio), 'nombre' => $servicio->nombre, 'created_at' => $ahora, 'updated_at' => $ahora]);
+                        $db->table('ventas_clinicas_ordenes')->insert(['venta_detalle_id' => $detalleId, 'unidad' => $unidad, 'paciente_id' => $pacienteId, 'tipo' => $tipoOrden, 'cita_id' => $linea['cita_id'] ?? null, 'nombre' => $servicio->nombre, 'created_at' => $ahora, 'updated_at' => $ahora]);
                     }
                     continue;
                 }

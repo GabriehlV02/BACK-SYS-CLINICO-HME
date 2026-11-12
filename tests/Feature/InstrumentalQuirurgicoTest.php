@@ -19,7 +19,7 @@ class InstrumentalQuirurgicoTest extends TestCase
         Schema::dropIfExists('instrumental_quirurgico');
         Schema::create('instrumental_quirurgico', function (Blueprint $t): void {
             $t->uuid('id')->primary(); $t->string('codigo')->unique(); $t->string('nombre'); $t->string('lote')->nullable();
-            $t->integer('cantidad'); $t->text('descripcion')->nullable(); $t->string('ubicacion'); $t->string('estado'); $t->string('imagen_ruta')->nullable(); $t->timestamps();
+            $t->string('medida')->nullable(); $t->boolean('cuenta_con_logo')->default(false); $t->integer('cantidad'); $t->text('descripcion')->nullable(); $t->string('ubicacion'); $t->string('estado'); $t->string('imagen_ruta')->nullable(); $t->timestamps();
         });
         Storage::fake('instrumental');
     }
@@ -28,12 +28,12 @@ class InstrumentalQuirurgicoTest extends TestCase
     {
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=');
         $foto = UploadedFile::fake()->createWithContent('foto.png', $png);
-        $respuesta = $this->postJson('/api/v1/instrumental', ['codigo' => 'inst-900', 'nombre' => 'Pinza', 'cantidad' => 2, 'imagen' => $foto])->assertCreated();
+        $respuesta = $this->postJson('/api/v1/instrumental', ['codigo' => 'inst-900', 'nombre' => 'Pinza', 'medida' => '14 cm', 'cuenta_con_logo' => true, 'cantidad' => 2, 'imagen' => $foto])->assertCreated();
         $id = $respuesta->json('data.id');
         $ruta = $respuesta->json('data.imagen_ruta');
         $this->assertStringStartsWith('imagenes instrumental/', $ruta);
         Storage::disk('instrumental')->assertExists($ruta);
-        $this->assertDatabaseHas('instrumental_quirurgico', ['id' => $id, 'codigo' => 'INST-900', 'ubicacion' => 'Almacén esterilización']);
+        $this->assertDatabaseHas('instrumental_quirurgico', ['id' => $id, 'codigo' => 'INST-900', 'medida' => '14 cm', 'cuenta_con_logo' => true, 'lote' => null, 'ubicacion' => 'Almacén esterilización']);
         $this->get('/api/v1/instrumental/'.$id.'/imagen')->assertOk();
         $this->postJson('/api/v1/instrumental', ['codigo' => 'inst-900', 'nombre' => 'Otro', 'cantidad' => 1])->assertUnprocessable();
         $this->assertSame(1, DB::table('instrumental_quirurgico')->count());
@@ -41,7 +41,7 @@ class InstrumentalQuirurgicoTest extends TestCase
     public function test_actualiza_solo_la_cantidad_y_rechaza_valores_invalidos(): void
     {
         $id = $this->postJson('/api/v1/instrumental', ['codigo' => 'PRUEBA', 'nombre' => 'Pinza', 'cantidad' => 3])->assertCreated()->json('data.id');
-        $this->patchJson('/api/v1/instrumental/'.$id.'/cantidad', ['cantidad' => 0, 'nombre' => 'No debe cambiar'])->assertOk()->assertJsonPath('data.cantidad', 0)->assertJsonPath('data.nombre', 'Pinza');
+        $this->patchJson('/api/v1/instrumental/'.$id.'/cantidad', ['cantidad' => 0, 'nombre' => 'No debe cambiar'])->assertOk()->assertJsonPath('data.cantidad', 0)->assertJsonPath('data.nombre', 'Pinza')->assertJsonPath('data.cuenta_con_logo', 0);
         $this->patchJson('/api/v1/instrumental/'.$id.'/cantidad', ['cantidad' => -1])->assertUnprocessable();
         $this->patchJson('/api/v1/instrumental/'.$id.'/cantidad', ['cantidad' => 1.5])->assertUnprocessable();
         $this->assertDatabaseHas('instrumental_quirurgico', ['id' => $id, 'cantidad' => 0, 'nombre' => 'Pinza']);
