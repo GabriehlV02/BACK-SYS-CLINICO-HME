@@ -53,6 +53,7 @@ Route::post('/restablecer-contrasena', RestablecerContrasenaController::class)->
 Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class])->group(function (): void {
     Route::get('/v1/instrumental', [InstrumentalQuirurgicoController::class, 'index']);
     Route::post('/v1/instrumental', [InstrumentalQuirurgicoController::class, 'store']);
+    Route::patch('/v1/instrumental/{id}', [InstrumentalQuirurgicoController::class, 'update'])->whereUuid('id');
     Route::patch('/v1/instrumental/{id}/cantidad', [InstrumentalQuirurgicoController::class, 'actualizarCantidad'])->whereUuid('id');
     Route::get('/v1/instrumental/{id}/imagen', [InstrumentalQuirurgicoController::class, 'imagen'])->whereUuid('id');
     Route::get('/v1/recepcion/ventas/opciones', [VentaProductosRecepcionController::class, 'opciones']);
@@ -70,6 +71,9 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
     Route::delete('/v1/configuracion/signos-vitales/{signo}', [ConfiguracionSignosVitalesController::class, 'destroy']);
     Route::get('/v1/profesionales', ProfesionalesCompartidosController::class);
     Route::get('/v1/diagnosticos', [DiagnosticosController::class, 'index']);
+    Route::get('/v1/citas/{cita}/atencion', [\App\Http\Controllers\AtencionConsultaController::class, 'show'])->whereNumber('cita');
+    Route::get('/v1/citas/{cita}/historial', [\App\Http\Controllers\AtencionConsultaController::class, 'historial'])->whereNumber('cita');
+    Route::put('/v1/citas/{cita}/atencion', [\App\Http\Controllers\AtencionConsultaController::class, 'guardar'])->whereNumber('cita');
     Route::get('/citas', [CitasController::class, 'index']);
     Route::get('/v1/citas/{cita}/signos-vitales', [ValoracionesSignosVitalesController::class, 'show'])->whereNumber('cita');
     Route::post('/v1/citas/{cita}/signos-vitales', [ValoracionesSignosVitalesController::class, 'store'])->whereNumber('cita');

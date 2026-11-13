@@ -43,7 +43,18 @@ class CitasController extends Controller
             'doctor' => ['required', 'string', 'max:180'], 'especialidad' => ['required', 'string', 'max:120'],
             'consultorio' => ['required', 'string', 'max:100'], 'fecha' => ['required', 'date_format:Y-m-d'],
             'hora' => ['required', 'date_format:H:i'], 'estado' => ['required', Rule::in(['por_confirmar', 'confirmada'])],
+            'tipo' => ['sometimes', Rule::in(['consulta', 'reconsulta'])],
+            'cita_origen_id' => ['required_if:tipo,reconsulta', 'nullable', 'integer', 'exists:citas,id'],
         ]);
+        if (($datos['tipo'] ?? 'consulta') === 'reconsulta') {
+            $origen = DB::table('citas')->where('id', $datos['cita_origen_id'])->first();
+            if (! $origen || $origen->paciente_id !== $datos['paciente_id'] || $origen->estado === 'cancelada'
+                || $origen->profesional_id !== ($datos['profesional_id'] ?? null) || $datos['fecha'] < $origen->fecha) {
+                throw ValidationException::withMessages(['cita_origen_id' => 'La reconsulta debe corresponder al paciente y médico de la consulta original, en una fecha igual o posterior.']);
+            }
+        } elseif (! empty($datos['cita_origen_id'])) {
+            throw ValidationException::withMessages(['cita_origen_id' => 'Solo una reconsulta puede tener una cita de origen.']);
+        }
         if (! empty($datos['servicio_id'])) {
             $existe = DB::connection('usuarios')->table('servicios as s')
                 ->join('tipos_inventario as t', 't.id', '=', 's.tipo_id')
@@ -87,7 +98,8 @@ class CitasController extends Controller
     {
         return DB::table('citas')->join('pacientes', 'pacientes.id', '=', 'citas.paciente_id')
             ->select(['citas.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci', 'pacientes.fecha_nacimiento', 'pacientes.direccion_domicilio'])
-            ->selectSub(DB::table('valoraciones_signos_vitales')->selectRaw('count(*)')->whereColumn('cita_id', 'citas.id'), 'cantidad_valoraciones');
+            ->selectSub(DB::table('valoraciones_signos_vitales')->selectRaw('count(*)')->whereColumn('cita_id', 'citas.id'), 'cantidad_valoraciones')
+            ->selectSub(DB::table('atenciones_consulta')->select('finalizada_en')->whereColumn('cita_id', 'citas.id'), 'atencion_finalizada_en');
     }
 
     private function presentar(object $cita): array
@@ -95,6 +107,7 @@ class CitasController extends Controller
         return ['id' => (string) $cita->id, 'pacienteId' => $cita->paciente_id,
             'profesionalId' => $cita->profesional_id,
             'servicioId' => $cita->servicio_id,
+            'tipo' => $cita->tipo, 'citaOrigenId' => $cita->cita_origen_id, 'atencionFinalizadaEn' => $cita->atencion_finalizada_en,
             'paciente' => trim($cita->nombres.' '.$cita->apellido_paterno.' '.$cita->apellido_materno),
             'nombre' => $cita->nombres, 'apellidos' => trim($cita->apellido_paterno.' '.$cita->apellido_materno),
             'ci' => $cita->ci, 'fechaNacimiento' => $cita->fecha_nacimiento,

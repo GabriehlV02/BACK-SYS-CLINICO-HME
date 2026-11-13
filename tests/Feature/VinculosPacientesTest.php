@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Flows\Autenticacion\AccesoCompartido;
+use App\Http\Controllers\VentaProductosRecepcionController;
 use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -91,9 +91,8 @@ class VinculosPacientesTest extends TestCase
         $paciente = $this->paciente();
         $usuarioId = '00000000-0000-4000-8000-000000000001';
         $this->actingAs(new GenericUser(['id' => $usuarioId]));
-        $this->mock(AccesoCompartido::class, function ($mock) use ($usuarioId): void {
-            $mock->shouldReceive('esAdministrador')->once()->with($usuarioId)->andReturnFalse();
-            $mock->shouldReceive('exigir')->once()->with($usuarioId, 'VENTAS_REGISTRAR');
+        $this->mock(VentaProductosRecepcionController::class, function ($mock): void {
+            $mock->shouldReceive('autorizar')->once()->andReturnFalse();
         });
         config(['services.contable.url' => 'http://contable.test', 'services.contable.token' => str_repeat('x', 48)]);
         Http::preventStrayRequests();

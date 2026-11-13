@@ -49,4 +49,15 @@ class CitasPacientesTest extends TestCase
         $this->getJson('/api/citas')->assertUnauthorized();
         $this->postJson('/api/citas', [])->assertUnauthorized();
     }
+
+    public function test_reconsulta_se_vincula_a_la_cita_original(): void
+    {
+        $datos = $this->datos();
+        $origen = $this->postJson('/api/citas', $datos)->assertCreated()->json('id');
+        $reconsulta = $this->postJson('/api/citas', [...$datos, 'fecha' => '2026-11-02', 'estado' => 'por_confirmar', 'tipo' => 'reconsulta', 'cita_origen_id' => $origen])
+            ->assertCreated()->assertJsonPath('tipo', 'reconsulta')->assertJsonPath('citaOrigenId', (int) $origen)->json('id');
+        $this->assertDatabaseHas('citas', ['id' => $reconsulta, 'cita_origen_id' => $origen, 'tipo' => 'reconsulta', 'paciente_id' => $datos['paciente_id']]);
+        $this->postJson('/api/citas', [...$datos, 'fecha' => '2026-10-31', 'tipo' => 'reconsulta', 'cita_origen_id' => $origen])->assertUnprocessable()->assertJsonValidationErrors('cita_origen_id');
+        $this->postJson('/api/citas', [...$datos, 'fecha' => '2026-11-03', 'tipo' => 'reconsulta'])->assertUnprocessable()->assertJsonValidationErrors('cita_origen_id');
+    }
 }

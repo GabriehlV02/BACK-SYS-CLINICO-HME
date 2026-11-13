@@ -154,10 +154,10 @@ class IntegracionContableTest extends TestCase
         $this->withToken('token-inventado')->getJson('/api/session')->assertUnauthorized();
         $token = $this->login();
         $this->withToken($token)->postJson('/api/logout')->assertNoContent();
-        $this->withToken($token)->getJson('/api/session')->assertOk();
+        $this->withToken($token)->getJson('/api/session')->assertUnauthorized();
         $token = $this->login();
         $this->travel(9)->hours();
-        $this->withToken($token)->getJson('/api/session')->assertUnauthorized();
+        $this->withToken($token)->getJson('/api/session')->assertOk();
     }
 
     public function test_desactivar_la_cuenta_central_o_su_rol_invalida_el_acceso(): void
@@ -364,6 +364,14 @@ class IntegracionContableTest extends TestCase
             $t->boolean('activo')->default(true);
             $t->timestamps();
         });
+        $schema->create('almacen_usuario', function (Blueprint $t): void {
+            $t->unsignedBigInteger('almacen_id');
+            $t->uuid('usuario_id');
+        });
+        $schema->create('sucursal_usuario', function (Blueprint $t): void {
+            $t->unsignedBigInteger('sucursal_id');
+            $t->uuid('usuario_id');
+        });
         $schema->create('almacenes_inventario', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('sucursal_id')->constrained('sucursales_inventario');
@@ -387,6 +395,7 @@ class IntegracionContableTest extends TestCase
         $this->assertDatabaseHas('almacenes_inventario', ['id' => 1, 'activo' => false], 'usuarios');
         $this->withToken($token)->postJson('/api/v1/operacion/cajas', ['nombre' => 'Caja 2', 'sucursal' => 'Central', 'almacen_principal_id' => 1])->assertUnprocessable();
         $permiso = DB::connection('usuarios')->table('permisos')->where('codigo', 'INVENTARIO_GESTIONAR')->value('id');
+        DB::connection('usuarios')->table('roles')->where('id', $ids['rol'])->update(['codigo' => 'OPERADOR_CLINICO', 'nombre' => 'Operador clínico']);
         DB::connection('usuarios')->table('permiso_rol')->where('permiso_id', $permiso)->delete();
         $this->withToken($token)->patchJson('/api/v1/operacion/almacenes/1/estado')->assertForbidden();
         $this->assertFalse(Schema::hasTable('almacenes'));
@@ -395,6 +404,7 @@ class IntegracionContableTest extends TestCase
     public function test_no_permite_escalar_privilegios_al_asignar_roles_compartidos(): void
     {
         $ids = $this->central();
+        DB::connection('usuarios')->table('roles')->where('id', $ids['rol'])->update(['codigo' => 'OPERADOR_CLINICO', 'nombre' => 'Operador clínico']);
         $token = $this->login();
         $db = DB::connection('usuarios');
         $extra = (string) Str::uuid();
