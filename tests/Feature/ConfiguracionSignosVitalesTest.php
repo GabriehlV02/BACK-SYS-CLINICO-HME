@@ -12,28 +12,12 @@ use Tests\TestCase;
 
 class ConfiguracionSignosVitalesTest extends TestCase
 {
-    public function test_alerta_es_opcional_y_exige_rangos_numericos(): void
-    {
-        $url = '/api/v1/configuracion/signos-vitales';
-        $datos = ['nombre' => 'Medicion configurable', 'unidad' => 'Puntos', 'abreviatura' => 'pts', 'tipo' => 'Número decimal'];
-        $id = $this->postJson($url, $datos)->assertCreated()->assertJsonPath('data.alertaPrioritaria', false)->json('data.id');
-        $datos['alertaPrioritaria'] = true;
-        $this->putJson("$url/$id", $datos)->assertUnprocessable()->assertJsonValidationErrors('alertaPrioritaria');
-        $this->assertDatabaseHas('configuracion_signos_vitales', ['id' => $id, 'alerta_prioritaria' => false]);
-        $datos['rangoReferencia'] = ['nombre' => 'Rango de prueba', 'minimo' => 10, 'maximo' => 20];
-        $this->putJson("$url/$id", $datos)->assertOk()->assertJsonPath('data.alertaPrioritaria', true);
-        $this->getJson($url)->assertJsonFragment(['id' => $id, 'alertaPrioritaria' => true]);
-        $datos['tipo'] = 'Texto';
-        $this->putJson("$url/$id", $datos)->assertUnprocessable();
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
         Schema::dropIfExists('configuracion_signos_vitales');
         (require database_path('migrations/2026_11_05_120915_create_configuracion_signos_vitales_table.php'))->up();
         (require database_path('migrations/2026_11_05_212049_add_componentes_to_configuracion_signos_vitales_table.php'))->up();
-        (require database_path('migrations/2026_11_13_144645_add_alerta_prioritaria_to_configuracion_signos_vitales_table.php'))->up();
         $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
         $this->actingAs(new GenericUser(['id' => 'usuario-prueba']));
         $this->mock(AccesoCompartido::class)->shouldReceive('exigir')->with('usuario-prueba', 'SIGNOS_VITALES_REGISTRAR')->zeroOrMoreTimes();

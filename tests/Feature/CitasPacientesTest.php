@@ -2,56 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Flows\Autenticacion\AccesoCompartido;
-use App\Http\Middleware\RegistrarAuditoriaAccion;
 use App\Http\Middleware\VerificarSesionCompartida;
-use Illuminate\Auth\GenericUser;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class CitasPacientesTest extends TestCase
 {
     use RefreshDatabase;
-
-    public function test_medico_recibe_prioridades_solo_de_su_agenda(): void
-    {
-        $datos = $this->datos();
-        $propia = $this->postJson('/api/citas', $datos)->assertCreated()->json('id');
-        $ajena = $this->postJson('/api/citas', [...$datos, 'hora' => '09:00'])->assertCreated()->json('id');
-        $usuario = '33333333-3333-4333-8333-333333333333';
-        $profesional = '44444444-4444-4444-8444-444444444444';
-        config(['database.connections.usuarios' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
-        DB::purge('usuarios');
-        Schema::connection('usuarios')->create('profesionales', function (Blueprint $tabla): void {
-            $tabla->uuid('id');
-            $tabla->uuid('usuario_id');
-            $tabla->boolean('activo');
-            $tabla->string('tipo');
-        });
-        DB::connection('usuarios')->table('profesionales')->insert(['id' => $profesional, 'usuario_id' => $usuario, 'activo' => true, 'tipo' => 'Médico/a']);
-        DB::table('citas')->where('id', $propia)->update(['profesional_id' => $profesional]);
-        foreach ([$propia, $ajena] as $cita) {
-            DB::table('valoraciones_signos_vitales')->insert(['cita_id' => $cita, 'registrado_por' => $usuario, 'created_at' => now(), 'mediciones' => json_encode([['id' => 'prueba', 'nombre' => 'Prueba', 'valor' => '30', 'unidad' => 'pts', 'alertaPrioritaria' => true]])]);
-        }
-        $this->withoutMiddleware(RegistrarAuditoriaAccion::class);
-        $this->actingAs(new GenericUser(['id' => $usuario]));
-        $this->mock(AccesoCompartido::class)->shouldReceive('esAdministrador')->andReturn(false);
-        $this->getJson('/api/citas')->assertOk()->assertJsonCount(1)->assertJsonPath('0.id', (string) $propia)->assertJsonCount(1, '0.prioridad.mediciones');
-    }
-
-    public function test_agenda_publica_solo_la_prioridad_de_la_ultima_valoracion(): void
-    {
-        $datos = $this->datos();
-        $cita = $this->postJson('/api/citas', $datos)->assertCreated()->json('id');
-        $valores = ['cita_id' => $cita, 'registrado_por' => '33333333-3333-4333-8333-333333333333', 'created_at' => now()];
-        $id = DB::table('valoraciones_signos_vitales')->insertGetId([...$valores, 'mediciones' => json_encode([['id' => 'prueba', 'nombre' => 'Prueba', 'valor' => '30', 'unidad' => 'pts', 'alertaPrioritaria' => true]])]);
-        $this->getJson('/api/citas')->assertOk()->assertJsonPath('0.prioridad.id', (string) $id)->assertJsonPath('0.prioridad.mediciones.0.valor', '30');
-        DB::table('valoraciones_signos_vitales')->insert([...$valores, 'mediciones' => json_encode([['id' => 'prueba', 'nombre' => 'Prueba', 'valor' => '15', 'alertaPrioritaria' => false]])]);
-        $this->getJson('/api/citas')->assertOk()->assertJsonPath('0.prioridad', null);
-    }
 
     private function datos(): array
     {

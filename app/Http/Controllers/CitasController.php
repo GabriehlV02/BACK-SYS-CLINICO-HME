@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Flows\Atenciones\PrioridadSignosVitales;
 use App\Flows\Atenciones\ProfesionalesCompartidos;
 use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Database\Query\Builder;
@@ -100,17 +99,13 @@ class CitasController extends Controller
         return DB::table('citas')->join('pacientes', 'pacientes.id', '=', 'citas.paciente_id')
             ->select(['citas.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci', 'pacientes.fecha_nacimiento', 'pacientes.direccion_domicilio'])
             ->selectSub(DB::table('valoraciones_signos_vitales')->selectRaw('count(*)')->whereColumn('cita_id', 'citas.id'), 'cantidad_valoraciones')
-            ->selectSub(DB::table('atenciones_consulta')->select('finalizada_en')->whereColumn('cita_id', 'citas.id'), 'atencion_finalizada_en')
-            ->selectSub(DB::table('valoraciones_signos_vitales')->select('mediciones')->whereColumn('cita_id', 'citas.id')->orderByDesc('id')->limit(1), 'ultima_mediciones')
-            ->selectSub(DB::table('valoraciones_signos_vitales')->select('id')->whereColumn('cita_id', 'citas.id')->orderByDesc('id')->limit(1), 'ultima_valoracion_id')
-            ->selectSub(DB::table('valoraciones_signos_vitales')->select('created_at')->whereColumn('cita_id', 'citas.id')->orderByDesc('id')->limit(1), 'ultima_valoracion_fecha');
+            ->selectSub(DB::table('atenciones_consulta')->select('finalizada_en')->whereColumn('cita_id', 'citas.id'), 'atencion_finalizada_en');
     }
 
     private function presentar(object $cita): array
     {
         return ['id' => (string) $cita->id, 'pacienteId' => $cita->paciente_id,
             'profesionalId' => $cita->profesional_id,
-            'prioridad' => PrioridadSignosVitales::resumir((object) ['id' => $cita->ultima_valoracion_id, 'mediciones' => $cita->ultima_mediciones, 'created_at' => $cita->ultima_valoracion_fecha]),
             'servicioId' => $cita->servicio_id,
             'tipo' => $cita->tipo, 'citaOrigenId' => $cita->cita_origen_id, 'atencionFinalizadaEn' => $cita->atencion_finalizada_en,
             'paciente' => trim($cita->nombres.' '.$cita->apellido_paterno.' '.$cita->apellido_materno),

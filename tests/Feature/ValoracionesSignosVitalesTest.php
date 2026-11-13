@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Flows\Atenciones\PrioridadSignosVitales;
 use App\Flows\Autenticacion\AccesoCompartido;
 use App\Http\Middleware\RegistrarAuditoriaAccion;
 use App\Http\Middleware\VerificarSesionCompartida;
@@ -14,33 +13,6 @@ use Tests\TestCase;
 
 class ValoracionesSignosVitalesTest extends TestCase
 {
-    public function test_prioridad_depende_del_switch_y_de_la_ultima_medicion(): void
-    {
-        $this->mock(AccesoCompartido::class)->shouldReceive('esAdministrador')->andReturn(true);
-        $rango = ['nombre' => 'Rango sintético de prueba', 'minimo' => 10, 'maximo' => 20];
-        DB::table('configuracion_signos_vitales')->where('id', 'temperatura')->update(['rango_referencia' => json_encode($rango), 'alerta_prioritaria' => false]);
-        $url = '/api/v1/citas/1/signos-vitales';
-        $version = $this->postJson($url, ['version' => null, 'valores' => ['temperatura' => '30'], 'prioridad' => true])->assertCreated()->assertJsonPath('data.prioridad', null)->json('data.id');
-        DB::table('configuracion_signos_vitales')->where('id', 'temperatura')->update(['alerta_prioritaria' => true]);
-        $version = $this->postJson($url, ['version' => $version, 'valores' => ['temperatura' => '30']])->assertCreated()->assertJsonPath('data.prioridad.mediciones.0.valor', '30')->assertJsonPath('data.prioridad.mediciones.0.rangoReferencia.maximo', 20)->json('data.id');
-        $this->getJson($url)->assertJsonPath('data.prioridad.id', (string) $version);
-        $this->postJson($url, ['version' => $version, 'valores' => ['temperatura' => '20']])->assertCreated()->assertJsonPath('data.prioridad', null);
-        $this->getJson($url)->assertJsonPath('data.prioridad', null);
-        $this->assertDatabaseCount('valoraciones_signos_vitales', 3);
-    }
-
-    public function test_evalua_componentes_y_no_aplica_rangos_de_adultos_sin_edad(): void
-    {
-        $this->assertFalse(PrioridadSignosVitales::fueraDeRango('30', ['minimo' => 10, 'maximo' => 20, 'contexto' => 'Adultos'], null));
-        $this->assertFalse(PrioridadSignosVitales::fueraDeRango('30', ['minimo' => 10, 'maximo' => 20, 'contexto' => 'Adultos'], 10));
-        $this->mock(AccesoCompartido::class)->shouldReceive('esAdministrador')->andReturn(true);
-        DB::table('configuracion_signos_vitales')->where('id', 'temperatura')->update(['alerta_prioritaria' => true, 'componentes' => json_encode([
-            ['id' => 'primero', 'nombre' => 'Primero', 'rangoReferencia' => ['nombre' => 'Prueba', 'minimo' => 10, 'maximo' => 20]],
-            ['id' => 'segundo', 'nombre' => 'Segundo', 'rangoReferencia' => ['nombre' => 'Prueba', 'minimo' => 10, 'maximo' => 20]],
-        ])]);
-        $this->postJson('/api/v1/citas/1/signos-vitales', ['version' => null, 'valores' => ['temperatura::primero' => '15', 'temperatura::segundo' => '5']])->assertCreated()->assertJsonCount(1, 'data.prioridad.mediciones')->assertJsonPath('data.prioridad.mediciones.0.id', 'temperatura::segundo');
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -57,7 +29,6 @@ class ValoracionesSignosVitalesTest extends TestCase
         });
         (require database_path('migrations/2026_11_05_120915_create_configuracion_signos_vitales_table.php'))->up();
         (require database_path('migrations/2026_11_05_212049_add_componentes_to_configuracion_signos_vitales_table.php'))->up();
-        (require database_path('migrations/2026_11_13_144645_add_alerta_prioritaria_to_configuracion_signos_vitales_table.php'))->up();
         (require database_path('migrations/2026_11_06_142231_create_servicios_signos_vitales_tables.php'))->up();
         (require database_path('migrations/2026_11_06_191143_create_valoraciones_signos_vitales_table.php'))->up();
         DB::table('citas')->insert([
