@@ -2,6 +2,7 @@
 
 namespace App\Flows\Emergencias\Http;
 
+use App\Flows\Autenticacion\AccesoCompartido;
 use App\Flows\Farmacia\CatalogoCompartido;
 use App\Flows\Pacientes\Models\Paciente;
 use Carbon\Carbon;
@@ -103,12 +104,17 @@ class EmergenciasController
             'campos.*' => ['nullable', 'string', 'max:5000'],
         ]);
 
-        return $this->actualizar($emergencia, function (array $ingreso) use ($datos): array {
+        $usuario = $request->user();
+        $roles = $usuario ? app(AccesoCompartido::class)->roles((string) $usuario->id)->get(['r.codigo', 'r.nombre']) : collect();
+        $esMedico = $roles->contains(fn (object $rol): bool => str_contains(mb_strtolower($rol->codigo.' '.$rol->nombre), 'medic') || str_contains(mb_strtolower($rol->codigo.' '.$rol->nombre), 'médic'));
+
+        return $this->actualizar($emergencia, function (array $ingreso) use ($datos, $usuario, $esMedico): array {
             $evaluaciones = $ingreso['evaluaciones'] ?? [];
             $revision = count($evaluaciones) + 1;
             $evaluaciones[] = [
                 'id' => (string) Str::uuid(), 'revision' => $revision, 'fecha' => now()->toIso8601String(),
-                'usuario' => 'Profesional de turno', 'campos' => $datos['campos'],
+                'usuario' => trim(($usuario->nombres ?? '').' '.($usuario->apellidos ?? '')) ?: 'Profesional de turno',
+                'autorId' => $usuario->id ?? null, 'autorTipo' => $esMedico ? 'medico' : 'otro', 'campos' => $datos['campos'],
             ];
             $ingreso['evaluaciones'] = $evaluaciones;
 
@@ -158,8 +164,8 @@ class EmergenciasController
             'itemId' => ['nullable', 'string', 'max:100'], 'porHora' => ['nullable', 'boolean'],
         ]);
         $usuario = $request->user();
-        $roles = app(\App\Flows\Autenticacion\AccesoCompartido::class)->roles((string) $usuario->id)->get(['r.codigo', 'r.nombre']);
-        $esMedico = $roles->contains(fn (object $rol): bool => str_contains(mb_strtolower($rol->codigo.' '. $rol->nombre), 'medic') || str_contains(mb_strtolower($rol->codigo.' '. $rol->nombre), 'médic'));
+        $roles = app(AccesoCompartido::class)->roles((string) $usuario->id)->get(['r.codigo', 'r.nombre']);
+        $esMedico = $roles->contains(fn (object $rol): bool => str_contains(mb_strtolower($rol->codigo.' '.$rol->nombre), 'medic') || str_contains(mb_strtolower($rol->codigo.' '.$rol->nombre), 'médic'));
         abort_if($datos['tipo'] === 'internacion' && ! $esMedico, 403, 'Solo un médico puede emitir una orden de hospitalización o internación.');
         abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada; no se pueden registrar órdenes.');
 

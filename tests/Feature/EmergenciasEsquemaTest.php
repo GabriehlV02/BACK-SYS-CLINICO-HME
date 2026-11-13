@@ -2,14 +2,40 @@
 
 namespace Tests\Feature;
 
+use App\Flows\Autenticacion\AccesoCompartido;
+use App\Http\Middleware\RegistrarAuditoriaAccion;
 use App\Http\Middleware\VerificarSesionCompartida;
+use Illuminate\Auth\GenericUser;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class EmergenciasEsquemaTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_evaluacion_identifica_al_profesional_y_su_rol_sin_aceptar_un_autor_enviado_por_el_cliente(): void
+    {
+        $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
+        Schema::create('roles_prueba', function (Blueprint $tabla): void {
+            $tabla->string('codigo');
+            $tabla->string('nombre');
+        });
+        $this->mock(AccesoCompartido::class)->shouldReceive('roles')->andReturn(DB::table('roles_prueba as r'));
+        $id = $this->postJson('/api/emergencias', ['cubiculo' => '7'])->assertCreated()->json('id');
+        foreach ([['MEDICO_EMERGENCIAS', 'Medico', 'medico'], ['ENFERMERIA', 'Enfermeria', 'otro']] as $indice => [$codigo, $nombre, $tipo]) {
+            DB::table('roles_prueba')->delete();
+            DB::table('roles_prueba')->insert(['codigo' => $codigo, 'nombre' => $nombre]);
+            $this->actingAs(new GenericUser(['id' => '11111111-1111-4111-8111-111111111111', 'nombres' => $nombre, 'apellidos' => 'Prueba']));
+            $this->postJson("/api/emergencias/{$id}/evaluacion", ['revision' => 1, 'campos' => ['tratamiento' => 'Tratamiento de prueba'], 'autorTipo' => 'medico', 'usuario' => 'Autor manipulado'])
+                ->assertOk()->assertJsonPath("evaluaciones.$indice.usuario", "$nombre Prueba")
+                ->assertJsonPath("evaluaciones.$indice.autorTipo", $tipo)
+                ->assertJsonPath("evaluaciones.$indice.autorId", '11111111-1111-4111-8111-111111111111');
+        }
+    }
 
     public function test_inicia_sin_identificacion_y_conserva_la_fecha_de_ingreso(): void
     {
@@ -24,7 +50,7 @@ class EmergenciasEsquemaTest extends TestCase
         $this->assertDatabaseHas('atenciones', [
             'id' => $atencion,
             'paciente_id' => null,
-            'iniciada_en' => \Illuminate\Support\Carbon::parse('2026-10-29T15:35:00.000Z')->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
+            'iniciada_en' => Carbon::parse('2026-10-29T15:35:00.000Z')->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
         ]);
         $this->postJson('/api/emergencias', ['cubiculo' => '3', 'inicio' => 'fecha inválida'])->assertUnprocessable();
     }
