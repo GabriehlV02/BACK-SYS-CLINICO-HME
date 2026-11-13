@@ -53,6 +53,7 @@ class ConfiguracionSignosVitalesController extends Controller
             'unidad' => ['required', 'string', 'max:120'],
             'abreviatura' => ['required', 'string', 'max:32'],
             'tipo' => ['required', Rule::in(['Número entero', 'Número decimal', 'Texto'])],
+            'alertaPrioritaria' => ['sometimes', 'boolean'],
             'rangoReferencia' => ['nullable', 'array:nombre,minimo,maximo,fuente,contexto'],
             'rangoReferencia.nombre' => ['required_with:rangoReferencia', 'string', 'max:120'],
             'rangoReferencia.minimo' => ['required_with:rangoReferencia', 'numeric'],
@@ -73,6 +74,12 @@ class ConfiguracionSignosVitalesController extends Controller
             throw ValidationException::withMessages(['nombre' => 'Ya existe un signo vital con ese nombre.']);
         }
         $rango = $datos['rangoReferencia'] ?? null;
+        if ($datos['alertaPrioritaria'] ?? false) {
+            $referencias = ! empty($datos['componentes']) ? array_map(fn (array $componente): ?array => $componente['rangoReferencia'] ?? null, $datos['componentes']) : [$rango];
+            if ($datos['tipo'] === 'Texto' || in_array(null, $referencias, true)) {
+                throw ValidationException::withMessages(['alertaPrioritaria' => 'Define un rango numérico para cada dato antes de activar la alerta prioritaria.']);
+            }
+        }
         foreach ($datos['componentes'] ?? [] as $componente) {
             $referencia = $componente['rangoReferencia'] ?? null;
             if ($referencia && $referencia['minimo'] >= $referencia['maximo']) {
@@ -83,11 +90,11 @@ class ConfiguracionSignosVitalesController extends Controller
             throw ValidationException::withMessages(['rangoReferencia' => 'El rango no corresponde al tipo de dato.']);
         }
 
-        return ['nombre' => trim($datos['nombre']), 'unidad' => trim($datos['unidad']), 'abreviatura' => trim($datos['abreviatura']), 'tipo' => $datos['tipo'], 'rango_referencia' => $rango ? json_encode($rango, JSON_THROW_ON_ERROR) : null, 'componentes' => ! empty($datos['componentes']) ? json_encode($datos['componentes'], JSON_THROW_ON_ERROR) : null];
+        return ['nombre' => trim($datos['nombre']), 'unidad' => trim($datos['unidad']), 'abreviatura' => trim($datos['abreviatura']), 'tipo' => $datos['tipo'], 'alerta_prioritaria' => $datos['alertaPrioritaria'] ?? false, 'rango_referencia' => $rango ? json_encode($rango, JSON_THROW_ON_ERROR) : null, 'componentes' => ! empty($datos['componentes']) ? json_encode($datos['componentes'], JSON_THROW_ON_ERROR) : null];
     }
 
     private function presentar(object $signo): array
     {
-        return ['id' => $signo->id, 'nombre' => $signo->nombre, 'unidad' => $signo->unidad, 'abreviatura' => $signo->abreviatura, 'tipo' => $signo->tipo, 'rangoReferencia' => $signo->rango_referencia ? json_decode($signo->rango_referencia, true, 512, JSON_THROW_ON_ERROR) : null, 'componentes' => $signo->componentes ? json_decode($signo->componentes, true, 512, JSON_THROW_ON_ERROR) : []];
+        return ['id' => $signo->id, 'nombre' => $signo->nombre, 'unidad' => $signo->unidad, 'abreviatura' => $signo->abreviatura, 'tipo' => $signo->tipo, 'alertaPrioritaria' => (bool) ($signo->alerta_prioritaria ?? false), 'rangoReferencia' => $signo->rango_referencia ? json_decode($signo->rango_referencia, true, 512, JSON_THROW_ON_ERROR) : null, 'componentes' => $signo->componentes ? json_decode($signo->componentes, true, 512, JSON_THROW_ON_ERROR) : []];
     }
 }

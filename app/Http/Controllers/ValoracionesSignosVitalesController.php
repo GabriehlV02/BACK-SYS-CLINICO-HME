@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Flows\Atenciones\PrioridadSignosVitales;
 use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -35,16 +37,33 @@ class ValoracionesSignosVitalesController extends Controller
                 $permitidos[$signo->id] = ['nombre' => $signo->nombre, 'unidad' => $signo->abreviatura, 'tipo' => $signo->tipo];
             }
         }
+        foreach ($definiciones as $signo) {
+            $componentes = $signo->componentes ? json_decode($signo->componentes, true, 512, JSON_THROW_ON_ERROR) : [];
+            foreach ($componentes ?: [['id' => null]] as $componente) {
+                $clave = $componente['id'] === null ? $signo->id : $signo->id.'::'.$componente['id'];
+                $permitidos[$clave]['alertaHabilitada'] = (bool) ($signo->alerta_prioritaria ?? false);
+                $permitidos[$clave]['rangoReferencia'] = $componente['id'] === null
+                    ? ($signo->rango_referencia ? json_decode($signo->rango_referencia, true, 512, JSON_THROW_ON_ERROR) : null)
+                    : ($componente['rangoReferencia'] ?? null);
+            }
+        }
+        $edad = null;
+        if (collect($permitidos)->contains(fn (array $campo): bool => $campo['alertaHabilitada'] && ! empty($campo['rangoReferencia']['contexto']))) {
+            $nacimiento = DB::table('citas')->join('pacientes', 'pacientes.id', '=', 'citas.paciente_id')->where('citas.id', $cita)->value('pacientes.fecha_nacimiento');
+            $edad = $nacimiento ? Carbon::parse($nacimiento)->age : null;
+        }
         $mediciones = [];
         foreach ($datos['valores'] as $id => $valor) {
             $definicion = $permitidos[$id] ?? null;
-            if (! $definicion || ! trim($valor)) {
+            if (! $definicion || trim($valor) === '') {
                 throw ValidationException::withMessages(['valores' => 'Solo se permiten mediciones activas y asignadas al servicio.']);
             }
             if ($definicion['tipo'] !== 'Texto' && (! is_numeric($valor) || ! is_finite((float) $valor) || ($definicion['tipo'] === 'Número entero' && floor((float) $valor) !== (float) $valor))) {
                 throw ValidationException::withMessages(['valores' => 'Una medición no corresponde al tipo de dato configurado.']);
             }
-            $mediciones[] = ['id' => $id, ...$definicion, 'valor' => trim($valor)];
+            $alerta = $definicion['alertaHabilitada'] && PrioridadSignosVitales::fueraDeRango($valor, $definicion['rangoReferencia'], $edad);
+            unset($definicion['alertaHabilitada']);
+            $mediciones[] = ['id' => $id, ...$definicion, 'valor' => trim($valor), 'alertaPrioritaria' => $alerta];
         }
         $id = DB::transaction(function () use ($cita, $request, $mediciones, $datos): int {
             $citaActual = DB::table('citas')->where('id', $cita)->lockForUpdate()->first();
@@ -145,6 +164,6 @@ class ValoracionesSignosVitalesController extends Controller
     {
         $mediciones = json_decode($valoracion->mediciones, true, 512, JSON_THROW_ON_ERROR);
 
-        return ['id' => $valoracion->id, 'citaId' => (string) $valoracion->cita_id, 'registradoPor' => $valoracion->registrado_por, 'registradoEn' => $valoracion->created_at, 'mediciones' => $mediciones, 'valores' => collect($mediciones)->pluck('valor', 'id')];
+        return ['prioridad' => PrioridadSignosVitales::resumir($valoracion), 'id' => $valoracion->id, 'citaId' => (string) $valoracion->cita_id, 'registradoPor' => $valoracion->registrado_por, 'registradoEn' => $valoracion->created_at, 'mediciones' => $mediciones, 'valores' => collect($mediciones)->pluck('valor', 'id')];
     }
 }
