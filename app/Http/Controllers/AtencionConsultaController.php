@@ -20,6 +20,7 @@ class AtencionConsultaController extends Controller
             $asignado = $registro->profesional_id && DB::connection('usuarios')->table('profesionales')->where('id', $registro->profesional_id)->where('usuario_id', $usuario)->where('activo', true)->exists();
             abort_unless($asignado, 403);
         }
+
         return $registro;
     }
 
@@ -27,6 +28,7 @@ class AtencionConsultaController extends Controller
     {
         $this->autorizar($request, $cita, $acceso);
         $registro = DB::table('atenciones_consulta')->where('cita_id', $cita)->first();
+
         return response()->json(['data' => $registro ? $this->presentar($registro) : null]);
     }
 
@@ -45,6 +47,7 @@ class AtencionConsultaController extends Controller
             ->selectSub(DB::table('valoraciones_signos_vitales as v')->select('v.mediciones')->whereColumn('v.cita_id', 'c.id')->orderByDesc('v.id')->limit(1), 'mediciones')
             ->orderByDesc('c.fecha')->orderByDesc('c.hora')->orderByDesc('c.id')
             ->get();
+
         return response()->json(['data' => $registros->map(fn ($registro) => [
             'citaId' => (string) $registro->cita_id, 'fecha' => $registro->fecha, 'hora' => $registro->hora,
             'medico' => $registro->doctor, 'especialidad' => $registro->especialidad, 'tipo' => $registro->tipo,
@@ -65,7 +68,7 @@ class AtencionConsultaController extends Controller
             'contenido.examenFisico' => ['present', 'nullable', 'string', 'max:20000'],
             'contenido.antecedentes' => ['present', 'nullable', 'string', 'max:20000'],
             'contenido.antecedentesEstructurados' => ['sometimes', 'array:vivienda,serviciosBasicos,alimentacion,habitos,hipertension,diabetes,tuberculosis,chagas,cardiopatia,asma,epoc,enfermedadRenal,otroPatologico,quirurgicos,alergicos,familiares'],
-            'contenido.antecedentesEstructurados.*' => ['string', 'max:5000'],
+            'contenido.antecedentesEstructurados.*' => ['nullable', 'string', 'max:5000'],
             'contenido.notas' => ['present', 'nullable', 'string', 'max:20000'],
             'contenido.diagnosticos' => ['present', 'array', 'max:100'],
             'contenido.diagnosticos.*' => ['array:diagnostico,planes'],
@@ -82,7 +85,15 @@ class AtencionConsultaController extends Controller
             'contenido.documentos.resultados' => ['sometimes', 'array', 'max:100'],
             'contenido.documentos.reconsultas' => ['sometimes', 'array', 'max:100'],
         ]);
-        foreach (['motivo', 'enfermedadActual', 'examenFisico', 'antecedentes', 'notas'] as $campo) $datos['contenido'][$campo] ??= '';
+        foreach (['motivo', 'enfermedadActual', 'examenFisico', 'antecedentes', 'notas'] as $campo) {
+            $datos['contenido'][$campo] ??= '';
+        }
+        if (isset($datos['contenido']['antecedentesEstructurados'])) {
+            $datos['contenido']['antecedentesEstructurados'] = array_map(
+                fn ($valor) => $valor ?? '',
+                $datos['contenido']['antecedentesEstructurados'],
+            );
+        }
         abort_if(strlen(json_encode($datos['contenido'], JSON_THROW_ON_ERROR)) > 1048576, 422, 'La atención excede el tamaño permitido.');
         $registro = DB::transaction(function () use ($cita, $request, $datos) {
             $citaActual = DB::table('citas')->where('id', $cita)->lockForUpdate()->first();
@@ -92,10 +103,15 @@ class AtencionConsultaController extends Controller
             abort_if(($actual ? (int) $actual->version : null) !== ($datos['version'] === null ? null : (int) $datos['version']), 409, 'La atención cambió. Vuelve a cargarla antes de guardar.');
             abort_if($actual?->finalizada_en, 409, 'La atención ya está finalizada.');
             $campos = ['contenido' => json_encode($datos['contenido'], JSON_THROW_ON_ERROR), 'registrado_por' => $request->user()->id, 'version' => ($actual?->version ?? 0) + 1, 'finalizada_en' => $datos['finalizar'] ? now() : null, 'updated_at' => now()];
-            if ($actual) DB::table('atenciones_consulta')->where('id', $actual->id)->update($campos);
-            else DB::table('atenciones_consulta')->insert(['cita_id' => $cita, 'created_at' => now(), ...$campos]);
+            if ($actual) {
+                DB::table('atenciones_consulta')->where('id', $actual->id)->update($campos);
+            } else {
+                DB::table('atenciones_consulta')->insert(['cita_id' => $cita, 'created_at' => now(), ...$campos]);
+            }
+
             return DB::table('atenciones_consulta')->where('cita_id', $cita)->first();
         });
+
         return response()->json(['data' => $this->presentar($registro)]);
     }
 

@@ -6,6 +6,7 @@ use App\Flows\Autenticacion\AccesoCompartido;
 use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class AtencionConsultaTest extends TestCase
@@ -29,10 +30,25 @@ class AtencionConsultaTest extends TestCase
         $url = '/api/v1/citas/'.$cita.'/atencion';
         $this->getJson($url)->assertOk()->assertJsonPath('data', null);
         $contenido = ['motivo' => 'Control', 'enfermedadActual' => 'Evolución', 'examenFisico' => '', 'antecedentes' => '', 'notas' => '', 'diagnosticos' => [['diagnostico' => '1A00 · CÓLERA', 'planes' => ['Hidratación']]], 'revision' => ['general' => 'Observación'], 'ordenes' => ['Hemograma']];
-        $this->putJson($url, ['version' => null, 'finalizar' => false, 'contenido' => $contenido])->assertOk()->assertJsonPath('data.version', 1)->assertJsonPath('data.contenido.revision.general', 'Observación');
+        $contenido['antecedentesEstructurados'] = [
+            'vivienda' => 'Propia', 'serviciosBasicos' => 'Acceso parcial', 'alimentacion' => 'Dieta especial', 'habitos' => 'Tabaco',
+            'hipertension' => 'Sí', 'diabetes' => 'No', 'tuberculosis' => 'Desconocido', 'chagas' => 'No refiere',
+            'cardiopatia' => 'No', 'asma' => 'Sí', 'epoc' => 'No', 'enfermedadRenal' => 'No',
+            'otroPatologico' => 'Otro antecedente referido', 'quirurgicos' => 'Cirugía previa', 'alergicos' => '', 'familiares' => 'Desconocido',
+        ];
+        $contenido['diagnosticos'][] = ['diagnostico' => 'OTRO · Diagnóstico de prueba', 'planes' => ['Indicación de prueba']];
+        $contenido['ordenes'] = ['Medicamento de prueba — Cada 8 horas durante 2 días', 'Radiografía de prueba'];
+        $this->putJson($url, ['version' => null, 'finalizar' => false, 'contenido' => $contenido])->assertOk()->assertJsonPath('data.version', 1)->assertJsonPath('data.contenido.revision.general', 'Observación')->assertJsonPath('data.contenido.antecedentesEstructurados.alergicos', '');
+        $almacenado = json_decode(DB::table('atenciones_consulta')->where('cita_id', $cita)->value('contenido'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame($contenido['antecedentesEstructurados'], $almacenado['antecedentesEstructurados']);
+        $this->assertSame($contenido['ordenes'], $almacenado['ordenes']);
         $this->putJson($url, ['version' => null, 'finalizar' => true, 'contenido' => $contenido])->assertStatus(409);
+        $contenido['antecedentesEstructurados']['quirurgicos'] = 'Múltiples cirugías previas';
+        $contenido['antecedentesEstructurados']['alergicos'] = 'Alergia a medicamentos';
         $this->putJson($url, ['version' => 1, 'finalizar' => true, 'contenido' => $contenido])->assertOk()->assertJsonPath('data.version', 2);
-        $this->getJson($url)->assertOk()->assertJsonPath('data.contenido.diagnosticos.0.planes.0', 'Hidratación');
+        $lectura = $this->getJson($url)->assertOk()->assertJsonPath('data.contenido.diagnosticos.0.planes.0', 'Hidratación')->assertJsonPath('data.contenido.diagnosticos.1.planes.0', 'Indicación de prueba');
+        $this->assertSame($contenido['antecedentesEstructurados'], $lectura->json('data.contenido.antecedentesEstructurados'));
+        $this->assertSame($contenido['ordenes'], $lectura->json('data.contenido.ordenes'));
         $this->putJson($url, ['version' => 2, 'finalizar' => false, 'contenido' => $contenido])->assertStatus(409);
         $this->getJson('/api/citas')->assertOk()->assertJsonPath('0.id', (string) $cita)->assertJsonPath('0.atencionFinalizadaEn', fn ($value) => $value !== null);
     }
@@ -52,10 +68,16 @@ class AtencionConsultaTest extends TestCase
         $futuro = $this->postJson('/api/citas', [...$cita, 'fecha' => '2026-11-14'])->assertCreated()->json('id');
         $borrador = $this->postJson('/api/citas', [...$cita, 'fecha' => '2026-11-11'])->assertCreated()->json('id');
         $contenido = ['motivo' => 'Control', 'enfermedadActual' => '', 'examenFisico' => '', 'antecedentes' => '', 'notas' => '', 'diagnosticos' => [], 'revision' => [], 'ordenes' => []];
-        foreach ([$anterior, $ajeno, $futuro] as $id) $this->putJson('/api/v1/citas/'.$id.'/atencion', ['version' => null, 'finalizar' => true, 'contenido' => $contenido])->assertOk();
+        $contenido['antecedentesEstructurados'] = ['hipertension' => 'Sí', 'quirurgicos' => 'Cirugía previa', 'alergicos' => 'Alergia a medicamentos', 'familiares' => 'Diabetes'];
+        $contenido['ordenes'] = ['Medicamento de prueba — Cada 8 horas durante 2 días'];
+        foreach ([$anterior, $ajeno, $futuro] as $id) {
+            $this->putJson('/api/v1/citas/'.$id.'/atencion', ['version' => null, 'finalizar' => true, 'contenido' => $contenido])->assertOk();
+        }
         $this->putJson('/api/v1/citas/'.$borrador.'/atencion', ['version' => null, 'finalizar' => false, 'contenido' => $contenido])->assertOk();
-        \Illuminate\Support\Facades\DB::table('valoraciones_signos_vitales')->insert(['cita_id' => $anterior, 'registrado_por' => '00000000-0000-4000-8000-000000000001', 'mediciones' => json_encode([['nombre' => 'Temperatura', 'valor' => '37', 'unidad' => '°C']]), 'created_at' => now()]);
-        $this->getJson('/api/v1/citas/'.$actual.'/historial')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.citaId', (string) $anterior)->assertJsonPath('data.0.contenido.motivo', 'Control')->assertJsonPath('data.0.signosVitales.0.valor', '37');
+        DB::table('valoraciones_signos_vitales')->insert(['cita_id' => $anterior, 'registrado_por' => '00000000-0000-4000-8000-000000000001', 'mediciones' => json_encode([['nombre' => 'Temperatura', 'valor' => '37', 'unidad' => '°C']]), 'created_at' => now()]);
+        $historial = $this->getJson('/api/v1/citas/'.$actual.'/historial')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.citaId', (string) $anterior)->assertJsonPath('data.0.contenido.motivo', 'Control')->assertJsonPath('data.0.signosVitales.0.valor', '37');
+        $this->assertSame($contenido['antecedentesEstructurados'], $historial->json('data.0.contenido.antecedentesEstructurados'));
+        $this->assertSame($contenido['ordenes'], $historial->json('data.0.contenido.ordenes'));
     }
 
     public function test_historial_no_se_expone_a_usuarios_sin_permiso(): void
