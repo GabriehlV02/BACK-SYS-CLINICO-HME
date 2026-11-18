@@ -215,7 +215,7 @@ class EmergenciasController
             if ($consumo['porHora']) {
                 $registroIndex = collect($ingreso['consumos'])->search(fn (array $existente): bool => ($existente['registroId'] ?? null) === $consumo['registroId'] && ($existente['itemId'] ?? null) === $consumo['itemId'] && ($existente['porHora'] ?? false));
                 if ($registroIndex !== false) {
-                    abort_if(empty($ingreso['consumos'][$registroIndex]['fin']), 422, 'El servicio ya estÃ¡ en uso.');
+                    abort_if(empty($ingreso['consumos'][$registroIndex]['fin']), 422, 'El servicio ya está en uso.');
                     $acumulado = $this->duracionConsumoMs($ingreso['consumos'][$registroIndex]);
                     foreach ($ingreso['consumos'] as $indice => $existente) {
                         if ($indice !== $registroIndex && ($existente['itemId'] ?? null) === $consumo['itemId'] && ($existente['porHora'] ?? false) && ! empty($existente['fin'])) {

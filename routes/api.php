@@ -32,6 +32,7 @@ use App\Http\Controllers\ConfiguracionSignosVitalesController;
 use App\Http\Controllers\DiagnosticosController;
 use App\Http\Controllers\InstrumentalQuirurgicoController;
 use App\Http\Controllers\InsumosEnfermeriaController;
+use App\Http\Controllers\MiActividadController;
 use App\Http\Controllers\PacienteFichaController;
 use App\Http\Controllers\ProfesionalesCompartidosController;
 use App\Http\Controllers\ServiciosSignosVitalesController;
@@ -88,6 +89,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
     Route::post('/citas', [CitasController::class, 'store']);
     Route::patch('/citas/{cita}/estado', [CitasController::class, 'estado'])->whereNumber('cita');
     Route::get('/session', [SesionCompartidaController::class, 'show']);
+    Route::get('/mi-actividad', MiActividadController::class);
     Route::post('/logout', [SesionCompartidaController::class, 'destroy']);
     Route::get('/catalogo', CatalogoCompartidoController::class);
     Route::get('/farmacia/tomi/estado', [TomiChatController::class, 'estado']);
