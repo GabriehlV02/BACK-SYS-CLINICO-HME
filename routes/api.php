@@ -7,6 +7,7 @@ use App\Flows\Autenticacion\Http\RestablecerContrasenaController;
 use App\Flows\Autenticacion\Http\SesionCompartidaController;
 use App\Flows\Autenticacion\Http\SolicitarRecuperacionContrasenaController;
 use App\Flows\Emergencias\Http\EmergenciasController;
+use App\Flows\Emergencias\Http\CuentasContablesController;
 use App\Flows\Farmacia\Http\CatalogoCompartidoController;
 use App\Flows\Farmacia\Http\FarmaciaAlmacenController;
 use App\Flows\Farmacia\Http\FarmaciaInventariosController;
@@ -49,6 +50,7 @@ Route::post('/login', IniciarSesionController::class)->middleware('throttle:logi
 Route::middleware(VerificarIntegracionContable::class)->prefix('integraciones/contable')->group(function (): void {
     Route::get('/pacientes', ListarPacientesController::class);
     Route::post('/pacientes', RegistrarPacienteController::class);
+    Route::get('/cuentas-emergencias', CuentasContablesController::class);
 });
 Route::post('/recuperar-contrasena', SolicitarRecuperacionContrasenaController::class)->middleware('throttle:recuperar-contrasena');
 Route::post('/restablecer-contrasena', RestablecerContrasenaController::class)->middleware('throttle:restablecer-contrasena');
@@ -117,10 +119,14 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
         Route::post('/{emergencia}/evaluacion', 'evaluacion');
         Route::post('/{emergencia}/evaluacion/{evaluacion}/editar', 'editarEvaluacion');
         Route::post('/{emergencia}/orden', 'orden');
+        Route::post('/{emergencia}/aplicar-orden', 'aplicarOrden');
         Route::post('/{emergencia}/uso-enfermeria', 'usoEnfermeria');
+        Route::post('/recuperar-consumos-inventario', 'recuperarConsumosInventario');
         Route::post('/{emergencia}/consumos', 'consumo');
         Route::post('/{emergencia}/finalizar-consumo', 'finalizarConsumo');
         Route::post('/{emergencia}/signos', 'signos');
+        Route::post('/{emergencia}/balance-hidrico', 'balanceHidrico');
+        Route::post('/{emergencia}/traslado-ambulancia', 'trasladoAmbulancia');
         Route::post('/{emergencia}/identidad', 'identidad');
         Route::post('/{emergencia}/cierre', 'cierre');
     });

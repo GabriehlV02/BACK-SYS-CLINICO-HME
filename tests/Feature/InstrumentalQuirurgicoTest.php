@@ -24,6 +24,17 @@ class InstrumentalQuirurgicoTest extends TestCase
         Storage::fake('instrumental');
     }
 
+    public function test_registrar_codigos_con_y_sin_asterisco_conserva_ambos_materiales(): void
+    {
+        $primero = $this->postJson('/api/v1/instrumental', ['codigo' => 'LU-12-34', 'nombre' => 'Material normal', 'cantidad' => 1])->assertCreated()->json('data.id');
+        $segundo = $this->postJson('/api/v1/instrumental', ['codigo' => 'LU-12-34-*', 'nombre' => 'Material con asterisco', 'cantidad' => 2])->assertCreated()->json('data.id');
+
+        $this->assertNotSame($primero, $segundo);
+        $this->assertDatabaseHas('instrumental_quirurgico', ['id' => $primero, 'codigo' => 'LU-12-34', 'nombre' => 'Material normal', 'cantidad' => 1]);
+        $this->assertDatabaseHas('instrumental_quirurgico', ['id' => $segundo, 'codigo' => 'LU-12-34-*', 'nombre' => 'Material con asterisco', 'cantidad' => 2]);
+        $this->assertSame(2, DB::table('instrumental_quirurgico')->count());
+    }
+
     public function test_guarda_imagen_en_carpeta_y_registra_su_ruta(): void
     {
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=');

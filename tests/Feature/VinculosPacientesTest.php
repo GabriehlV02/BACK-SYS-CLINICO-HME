@@ -60,6 +60,21 @@ class VinculosPacientesTest extends TestCase
         $this->assertDatabaseCount('pacientes', 1);
     }
 
+    public function test_guardar_identidad_con_campos_vacios_vincula_y_actualiza_solo_los_cambios_de_la_ficha(): void
+    {
+        $paciente = $this->paciente();
+        $id = $this->postJson('/api/emergencias', ['cubiculo' => '1'])->assertCreated()->json('id');
+        $respuesta = $this->postJson("/api/emergencias/{$id}/identidad", [
+            'revision' => 1, 'pacienteId' => $paciente['id'], 'nombres' => 'Prueba', 'apellidos' => 'Vinculo Clinico',
+            'documento' => 'VINC-123', 'nit' => '', 'complemento' => '', 'observaciones' => str_repeat('a', 250),
+            'telefono' => '70000002', 'cambiosPaciente' => ['telefono' => '70000002'],
+        ])->assertOk()->assertJsonPath('pacienteId', $paciente['id'])->assertJsonPath('identidad.telefono', '70000002');
+        $this->assertDatabaseHas('pacientes', ['id' => $paciente['id'], 'telefono' => '70000002', 'nombres' => 'Prueba']);
+        $this->getJson('/api/emergencias')->assertOk()->assertJsonPath('cuentas.0.identidad.observaciones', str_repeat('a', 250));
+        $this->postJson("/api/emergencias/{$id}/identidad", ['revision' => $respuesta->json('revision'), 'pacienteId' => $paciente['id'], 'documento' => 'CI-DIFERENTE', 'telefono' => '70000003', 'cambiosPaciente' => ['telefono' => '70000003']])->assertUnprocessable();
+        $this->assertDatabaseHas('pacientes', ['id' => $paciente['id'], 'telefono' => '70000002']);
+    }
+
     public function test_no_permite_consultar_o_editar_ficha_sin_sesion(): void
     {
         $id = '00000000-0000-4000-8000-000000000000';
