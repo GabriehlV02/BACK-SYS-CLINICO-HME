@@ -171,21 +171,53 @@ class TomiInventario
         $vigentes = $lotes->filter(fn (object $lote): bool => ! $lote->vencimiento || $lote->vencimiento >= now()->toDateString())
             ->filter(fn (object $lote): bool => (float) $lote->cantidad > 0)
             ->sortBy(fn (object $lote): string => $lote->vencimiento ?: '9999-12-31');
-        $productos = $vigentes->groupBy('item_id');
-        $gruposProducto = $vigentes->groupBy(fn (object $lote): string => $lote->producto_base_id.'|'.$lote->presentacion);
-        $respuesta = [];
+        $gruposProducto = $vigentes->groupBy('item_id');
+        $productos = $vigentes->groupBy('item_id')->sortBy(function ($producto): string {
+            return $producto->pluck('vencimiento')->filter()->min() ?: '9999-12-31';
+        });
+        $nombreBuscado = trim((string) ($vigentes->first()->generico ?? $terminosProducto[0] ?? $consulta));
+        $respuesta = ['Tenemos '.$nombreBuscado.' disponible:'];
+        $opciones = [];
 
         foreach ($productos as $producto) {
             $ejemplo = $producto->first();
-            $titulo = trim($ejemplo->generico.' '.$ejemplo->presentacion.' ('.$ejemplo->marca.')');
+            $nombre = trim($ejemplo->generico.' '.$ejemplo->presentacion);
+            $marca = trim((string) $ejemplo->marca);
             $total = (float) $producto->sum('cantidad');
-            $respuesta[] = $titulo.' — stock vigente: '.$this->formatearCantidad($total).'.';
+            $proximosVencimientos = $producto
+                ->filter(fn (object $lote): bool => $lote->vencimiento && $lote->vencimiento <= now()->addDays(30)->toDateString())
+                ->groupBy('vencimiento');
+            $detalle = '• '.$nombre.($marca !== '' ? ' — marca '.$marca : '').' — '.$this->formatearCantidad($total).' unidades';
+
+            if ($proximosVencimientos->isNotEmpty()) {
+                $fechaProxima = $proximosVencimientos->keys()->sort()->first();
+                $cantidadProxima = (float) $proximosVencimientos->get($fechaProxima)->sum('cantidad');
+                $detalle .= ' — '.$this->formatearCantidad($cantidadProxima).' próximas a vencerse el '.\Illuminate\Support\Carbon::parse($fechaProxima)->format('d/m/Y');
+            }
+
+            $lineasOpcion = [$detalle.'.'];
+
             $porAlmacen = $producto->groupBy('almacen_id');
             foreach ($porAlmacen as $existenciasAlmacen) {
                 $ubicacion = $existenciasAlmacen->first()->ubicacion ?: 'ubicación sin registrar';
-                $respuesta[] = '• '.$existenciasAlmacen->first()->sucursal.' / '.$existenciasAlmacen->first()->almacen.' — '.$ubicacion.' — '.$this->formatearCantidad((float) $existenciasAlmacen->sum('cantidad')).' unidades.';
+                $lineasOpcion[] = '  Ubicación: '.$existenciasAlmacen->first()->sucursal.' / '.$existenciasAlmacen->first()->almacen.' — '.$ubicacion.'.';
             }
+            $opciones[] = implode("\n", $lineasOpcion);
+        }
 
+        if ($opciones !== []) {
+            $respuesta[] = array_shift($opciones);
+            if ($opciones !== []) {
+                $respuesta[] = 'Otras opciones disponibles:';
+                array_push($respuesta, ...$opciones);
+            }
+        }
+
+        $otrosNombres = $vigentes->pluck('nombre_comercial')->filter()->unique()
+            ->reject(fn (string $nombre): bool => mb_strtolower(trim($nombre)) === mb_strtolower($nombreBuscado))
+            ->values();
+        if ($otrosNombres->isNotEmpty()) {
+            $respuesta[] = 'También aparece con otro nombre: '.$otrosNombres->implode(', ').'.';
         }
 
         if ($solicitado !== null) {

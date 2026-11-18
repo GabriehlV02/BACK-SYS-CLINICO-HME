@@ -64,7 +64,23 @@ class TomiInventarioTest extends TestCase
         $consulta = '¿Cuánto paracetamol queda?';
 
         $this->assertTrue($tomi->esConsultaInventario($consulta));
-        $this->assertStringContainsString('stock vigente: 19.', $tomi->responder($consulta));
+        $this->assertStringContainsString('Paracetamol 500 mg — marca Genérico — 19 unidades', $tomi->responder($consulta));
+    }
+
+    public function test_responde_con_opciones_agrupadas_marca_stock_vencimiento_y_nombres_comerciales(): void
+    {
+        $this->crearOpcionesParacetamol();
+
+        $respuesta = app(TomiInventario::class)->responder('¿Tenemos paracetamol?');
+
+        $fechaProxima = now()->addDays(10)->format('d/m/Y');
+        $this->assertStringStartsWith('Tenemos Paracetamol disponible:', $respuesta);
+        $this->assertStringContainsString('Paracetamol 500 mg — marca Bago — 3 unidades — 3 próximas a vencerse el '.$fechaProxima, $respuesta);
+        $this->assertStringContainsString('Otras opciones disponibles:', $respuesta);
+        $this->assertStringContainsString('Paracetamol 1 gramo — marca Genérico — 120 unidades', $respuesta);
+        $this->assertStringContainsString('Paracetamol 50 mg — marca Genérico — 50 unidades', $respuesta);
+        $this->assertStringContainsString('También aparece con otro nombre: Acetaminofén.', $respuesta);
+        $this->assertStringContainsString('Ubicación: Sucursal Central / Almacén principal — Estante A / Repisa 2.', $respuesta);
     }
 
     private function crearEsquemaInventario(): void
@@ -100,6 +116,27 @@ class TomiInventarioTest extends TestCase
         ] as $lote) {
             $db->table('lotes_items')->insert(['id' => $lote['id'], 'item_id' => 1, 'numero' => $lote['numero'], 'vencimiento' => $lote['vence']]);
             $db->table('existencias_lote')->insert(['lote_id' => $lote['id'], 'almacen_id' => 1, 'cantidad' => $lote['cantidad']]);
+        }
+    }
+
+    private function crearOpcionesParacetamol(): void
+    {
+        $db = DB::connection('usuarios');
+        $db->table('items_inventario')->insert([
+            ['id' => 2, 'producto_base_id' => 1, 'estado' => 'ACTIVO', 'nombre_comercial' => 'Paracetamol', 'marca' => 'Bago', 'presentacion' => '500 mg', 'codigo_barras' => 'PAR500B', 'clave' => 'PAR500B'],
+            ['id' => 3, 'producto_base_id' => 1, 'estado' => 'ACTIVO', 'nombre_comercial' => 'Paracetamol', 'marca' => 'Genérico', 'presentacion' => '1 gramo', 'codigo_barras' => 'PAR1G', 'clave' => 'PAR1G'],
+            ['id' => 4, 'producto_base_id' => 1, 'estado' => 'ACTIVO', 'nombre_comercial' => 'Acetaminofén', 'marca' => 'Genérico', 'presentacion' => '50 mg', 'codigo_barras' => 'PAR50', 'clave' => 'PAR50'],
+        ]);
+
+        foreach ([
+            ['item' => 2, 'cantidad' => 3, 'vence' => now()->addDays(10)->toDateString(), 'ubicacion' => 'Estante B / Repisa 1'],
+            ['item' => 3, 'cantidad' => 120, 'vence' => now()->addDays(90)->toDateString(), 'ubicacion' => 'Estante C / Repisa 3'],
+            ['item' => 4, 'cantidad' => 50, 'vence' => now()->addDays(120)->toDateString(), 'ubicacion' => 'Estante D / Repisa 4'],
+        ] as $indice => $opcion) {
+            $loteId = $indice + 10;
+            $db->table('lotes_items')->insert(['id' => $loteId, 'item_id' => $opcion['item'], 'numero' => 'L-'.$loteId, 'vencimiento' => $opcion['vence']]);
+            $db->table('existencias_lote')->insert(['lote_id' => $loteId, 'almacen_id' => 1, 'cantidad' => $opcion['cantidad']]);
+            $db->table('item_almacen_ubicaciones')->insert(['item_id' => $opcion['item'], 'almacen_id' => 1, 'ubicacion' => $opcion['ubicacion']]);
         }
     }
 }
