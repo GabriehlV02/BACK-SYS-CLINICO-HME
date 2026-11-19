@@ -75,6 +75,8 @@ class InsumosEnfermeriaTest extends TestCase
             $t->uuid('solicitado_por');
             $t->string('solicitante');
             $t->integer('almacen_destino_id');
+            $t->string('servicio', 120)->nullable();
+            $t->json('pacientes')->nullable();
             $t->string('estado');
             $t->json('detalles');
             $t->string('observacion')->nullable();
@@ -117,7 +119,7 @@ class InsumosEnfermeriaTest extends TestCase
 
     private function pedido(float $cantidad = 4): array
     {
-        return ['id' => '22222222-2222-4222-8222-222222222222', 'almacen_destino_id' => 2, 'detalles' => [['item_id' => 1, 'cantidad' => $cantidad]], 'observacion' => 'Reposicion'];
+        return ['id' => '22222222-2222-4222-8222-222222222222', 'almacen_destino_id' => 2, 'servicio' => 'Enfermeria', 'pacientes' => ['Paciente de prueba'], 'detalles' => [['item_id' => 1, 'cantidad' => $cantidad]], 'observacion' => 'Reposicion'];
     }
 
     public function test_lista_solo_el_stock_del_almacen_asignado_y_permite_solicitar_insumos_ausentes(): void

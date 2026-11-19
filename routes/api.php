@@ -61,6 +61,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
     Route::get('/v1/enfermeria/insumos/solicitudes', [InsumosEnfermeriaController::class, 'index']);
     Route::post('/v1/enfermeria/insumos/solicitudes', [InsumosEnfermeriaController::class, 'store']);
     Route::post('/v1/enfermeria/insumos/solicitudes/{solicitud}/dispensar', [InsumosEnfermeriaController::class, 'dispensar'])->whereUuid('solicitud');
+    Route::post('/v1/enfermeria/insumos/solicitudes/{solicitud}/anular', [InsumosEnfermeriaController::class, 'anular'])->whereUuid('solicitud');
     Route::get('/v1/instrumental', [InstrumentalQuirurgicoController::class, 'index']);
     Route::post('/v1/instrumental', [InstrumentalQuirurgicoController::class, 'store']);
     Route::patch('/v1/instrumental/{id}', [InstrumentalQuirurgicoController::class, 'update'])->whereUuid('id');

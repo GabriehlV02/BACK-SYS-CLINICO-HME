@@ -68,18 +68,30 @@ class InsumosEnfermeriaController extends Controller
             $consulta->whereIn('r.almacen_destino_id', $this->almacenes()->pluck('a.id')->all());
         }
 
-        return response()->json(['data' => $consulta->orderByDesc('r.created_at')->limit(200)->get(['r.*', 'a.nombre as almacen'])->map(function (object $r): object {
+        $consulta->orderByDesc('r.created_at');
+        $pagina = $request->boolean('farmacia') ? $consulta->paginate(50, ['r.*', 'a.nombre as almacen']) : null;
+        $filas = $pagina ? $pagina->getCollection() : $consulta->limit(200)->get(['r.*', 'a.nombre as almacen']);
+        $filas->transform(function (object $r): object {
             $r->detalles = json_decode($r->detalles, true, 512, JSON_THROW_ON_ERROR);
+            $r->pacientes = $r->pacientes ? json_decode($r->pacientes, true, 512, JSON_THROW_ON_ERROR) : [];
             unset($r->movimientos);
 
             return $r;
-        })]);
+        });
+        if ($pagina) {
+            $pagina->setCollection($filas);
+
+            return response()->json($pagina);
+        }
+
+        return response()->json(['data' => $filas]);
     }
 
     public function store(Request $request): JsonResponse
     {
         $datos = $request->validate([
             'id' => ['required', 'uuid'], 'almacen_destino_id' => ['required', 'integer', 'min:1'],
+            'servicio' => ['required', 'string', 'max:120'], 'pacientes' => ['nullable', 'array', 'max:30'], 'pacientes.*' => ['string', 'max:120'],
             'observacion' => ['nullable', 'string', 'max:1000'], 'detalles' => ['required', 'array', 'min:1', 'max:30'],
             'detalles.*' => ['array:item_id,cantidad'], 'detalles.*.item_id' => ['required', 'integer', 'distinct', 'min:1'],
             'detalles.*.cantidad' => ['required', 'numeric', 'min:0.001', 'max:100000', 'decimal:0,3'],
@@ -94,18 +106,19 @@ class InsumosEnfermeriaController extends Controller
             $detalles[] = ['item_id' => (int) $item->id, 'nombre' => $item->nombre, 'unidad' => $item->unidad, 'cantidad' => (float) $detalle['cantidad']];
         }
         $db = $this->acceso->conexion();
-        $db->transaction(function () use ($db, $request, $datos, $detalles): void {
+        $pacientes = array_values(array_unique(array_filter(array_map('trim', $datos['pacientes'] ?? []))));
+        $db->transaction(function () use ($db, $request, $datos, $detalles, $pacientes): void {
             $db->table('almacenes_inventario')->where('id', $datos['almacen_destino_id'])->lockForUpdate()->first();
             $existente = $db->table('clinico_solicitudes_insumos')->where('id', $datos['id'])->first();
             if ($existente) {
-                abort_unless($existente->solicitado_por === $request->user()->id && (int) $existente->almacen_destino_id === (int) $datos['almacen_destino_id'] && json_decode($existente->detalles, true) == $detalles, 409, 'La solicitud ya existe con otros datos.');
+                abort_unless($existente->solicitado_por === $request->user()->id && (int) $existente->almacen_destino_id === (int) $datos['almacen_destino_id'] && ($existente->servicio ?? null) === trim($datos['servicio']) && (json_decode($existente->pacientes ?? '[]', true) ?: []) === $pacientes && json_decode($existente->detalles, true) == $detalles, 409, 'La solicitud ya existe con otros datos.');
 
                 return;
             }
             $usuario = $request->user();
             $db->table('clinico_solicitudes_insumos')->insert([
                 'id' => $datos['id'], 'solicitado_por' => $usuario->id, 'solicitante' => trim(($usuario->nombres ?? $usuario->nombre ?? '').' '.($usuario->apellidos ?? '')),
-                'almacen_destino_id' => $datos['almacen_destino_id'], 'estado' => 'pendiente', 'detalles' => json_encode($detalles, JSON_THROW_ON_ERROR),
+                'almacen_destino_id' => $datos['almacen_destino_id'], 'servicio' => trim($datos['servicio']), 'pacientes' => json_encode($pacientes, JSON_THROW_ON_ERROR), 'estado' => 'pendiente', 'detalles' => json_encode($detalles, JSON_THROW_ON_ERROR),
                 'observacion' => $datos['observacion'] ?? null, 'created_at' => now(), 'updated_at' => now(),
             ]);
         });
@@ -164,5 +177,24 @@ class InsumosEnfermeriaController extends Controller
         }, 3);
 
         return response()->json(['message' => 'Dispensación registrada. El stock ya está disponible en el almacén de destino.']);
+    }
+
+    public function anular(Request $request, string $solicitud): JsonResponse
+    {
+        $this->exigirFarmacia($request);
+        $db = $this->acceso->conexion();
+        $db->transaction(function () use ($db, $request, $solicitud): void {
+            $pedido = $db->table('clinico_solicitudes_insumos')->where('id', $solicitud)->lockForUpdate()->first();
+            abort_unless($pedido, 404);
+            if ($pedido->estado === 'anulada') {
+                return;
+            }
+            abort_unless($pedido->estado === 'pendiente', 409, 'Solo se pueden anular solicitudes pendientes.');
+            $db->table('clinico_solicitudes_insumos')->where('id', $solicitud)->update([
+                'estado' => 'anulada', 'anulada_por' => $request->user()->id, 'anulada_en' => now(), 'updated_at' => now(),
+            ]);
+        }, 3);
+
+        return response()->json(['message' => 'Solicitud anulada. No se modificó el stock.']);
     }
 }
