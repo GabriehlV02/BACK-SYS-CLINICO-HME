@@ -10,7 +10,9 @@ return new class extends Migration
     public function up(): void
     {
         DB::transaction(function (): void {
-            DB::statement('LOCK TABLE cajas, caja_almacen IN ACCESS EXCLUSIVE MODE');
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                DB::statement('LOCK TABLE cajas, caja_almacen IN ACCESS EXCLUSIVE MODE');
+            }
             foreach (['cajas', 'caja_almacen'] as $tabla) {
                 if (DB::table($tabla)->exists()) {
                     throw new \RuntimeException("La tabla clínica {$tabla} contiene datos. Reconcílialos con Contabilidad antes de retirarla.");
