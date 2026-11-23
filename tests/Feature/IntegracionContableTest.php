@@ -16,8 +16,7 @@ class IntegracionContableTest extends TestCase
 
     private function central(): array
     {
-        config(['database.connections.usuarios' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true], 'cache.default' => 'array']);
-        DB::purge('usuarios');
+        $this->aislarUsuarios();
         $schema = Schema::connection('usuarios');
         $schema->create('usuarios_sistema', function (Blueprint $t): void {
             $t->uuid('id')->primary();
@@ -386,14 +385,23 @@ class IntegracionContableTest extends TestCase
         $this->assertSame('1', $almacen);
         $this->assertDatabaseHas('almacenes_inventario', ['id' => 1, 'nombre' => 'Farmacia'], 'usuarios');
         $this->withToken($token)->postJson('/api/v1/operacion/almacenes', ['nombre' => 'Otro', 'codigo' => 'FAR-01', 'sucursal' => 'Central'])->assertUnprocessable();
-        $caja = $this->withToken($token)->postJson('/api/v1/operacion/cajas', ['nombre' => 'Caja 1', 'sucursal' => 'Central', 'almacen_principal_id' => $almacen, 'almacenes' => [$almacen, $almacen]])
-            ->assertCreated()->json('data.id');
-        $this->assertDatabaseHas('cajas', ['id' => $caja, 'almacen_principal_id' => 1]);
-        $this->assertDatabaseCount('caja_almacen', 1);
+        $schema->create('cajas', function (Blueprint $t): void {
+            $t->id();
+            $t->string('nombre');
+            $t->foreignId('sucursal_id');
+            $t->boolean('activo');
+        });
+        $schema->create('almacen_caja', function (Blueprint $t): void {
+            $t->foreignId('caja_id');
+            $t->foreignId('almacen_id');
+        });
+        $db = DB::connection('usuarios');
+        $caja = $db->table('cajas')->insertGetId(['nombre' => 'Caja central', 'sucursal_id' => 1, 'activo' => true]);
+        $db->table('almacen_caja')->insert(['caja_id' => $caja, 'almacen_id' => $almacen]);
+        $this->withToken($token)->postJson('/api/v1/operacion/cajas', [])->assertNotFound();
         $this->withToken($token)->getJson('/api/v1/operacion/almacenes-cajas')->assertOk()->assertJsonPath('cajas.0.almacenes.0.id', '1');
         $this->withToken($token)->patchJson('/api/v1/operacion/almacenes/1/estado')->assertOk()->assertJsonPath('estado', 'INACTIVO');
         $this->assertDatabaseHas('almacenes_inventario', ['id' => 1, 'activo' => false], 'usuarios');
-        $this->withToken($token)->postJson('/api/v1/operacion/cajas', ['nombre' => 'Caja 2', 'sucursal' => 'Central', 'almacen_principal_id' => 1])->assertUnprocessable();
         $permiso = DB::connection('usuarios')->table('permisos')->where('codigo', 'INVENTARIO_GESTIONAR')->value('id');
         DB::connection('usuarios')->table('roles')->where('id', $ids['rol'])->update(['codigo' => 'OPERADOR_CLINICO', 'nombre' => 'Operador clínico']);
         DB::connection('usuarios')->table('permiso_rol')->where('permiso_id', $permiso)->delete();

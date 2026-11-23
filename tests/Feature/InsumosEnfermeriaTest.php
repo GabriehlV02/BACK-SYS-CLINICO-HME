@@ -18,8 +18,7 @@ class InsumosEnfermeriaTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['database.connections.usuarios' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
-        DB::purge('usuarios');
+        $this->aislarUsuarios();
         $schema = Schema::connection('usuarios');
         $schema->create('sucursales_inventario', function (Blueprint $t): void {
             $t->id();
@@ -125,7 +124,8 @@ class InsumosEnfermeriaTest extends TestCase
     public function test_lista_solo_el_stock_del_almacen_asignado_y_permite_solicitar_insumos_ausentes(): void
     {
         $this->getJson(self::URL.'/opciones')->assertOk()->assertJsonCount(1, 'almacenes')->assertJsonCount(2, 'catalogo');
-        $this->getJson(self::URL.'/stock?almacen_id=2')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.nombre', 'Jeringa')->assertJsonPath('data.0.cantidad', 2);
+        $stock = $this->getJson(self::URL.'/stock?almacen_id=2')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.nombre', 'Jeringa');
+        $this->assertSame(2.0, (float) $stock->json('data.0.cantidad'));
         $this->getJson(self::URL.'/stock?almacen_id=1')->assertForbidden();
         $this->postJson(self::URL.'/solicitudes', [...$this->pedido(), 'detalles' => [['item_id' => 2, 'cantidad' => 3]]])->assertCreated();
         $this->assertDatabaseHas('existencias_lote', ['almacen_id' => 2, 'cantidad' => 2], 'usuarios');

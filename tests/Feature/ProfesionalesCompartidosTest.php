@@ -16,8 +16,7 @@ class ProfesionalesCompartidosTest extends TestCase
     private function catalogo(): string
     {
         $this->withoutMiddleware(VerificarSesionCompartida::class);
-        config(['database.connections.usuarios' => [...config('database.connections.sqlite'), 'database' => ':memory:']]);
-        DB::purge('usuarios');
+        $this->aislarUsuarios();
         Schema::connection('usuarios')->create('tipos_inventario', function (Blueprint $t): void {
             $t->id();
             $t->boolean('activo');

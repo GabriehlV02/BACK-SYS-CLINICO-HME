@@ -128,6 +128,76 @@ class EmergenciasController
         });
     }
 
+    public function diagnosticos(string $emergencia): JsonResponse
+    {
+        $this->buscar($emergencia);
+
+        return response()->json(DB::table('emergencia_diagnosticos as ed')
+            ->join('diagnosticos as d', 'd.id', '=', 'ed.diagnostico_id')
+            ->where('ed.emergencia_id', $emergencia)->orderBy('d.nombre')->get(['d.codigo', 'd.nombre']));
+    }
+
+    public function guardarDiagnostico(Request $request, string $emergencia): JsonResponse
+    {
+        $datos = $request->validate([
+            'codigo' => ['required', 'string', 'exists:diagnosticos,codigo'],
+            'seleccionado' => ['required', 'boolean'],
+        ]);
+
+        return DB::transaction(function () use ($emergencia, $datos): JsonResponse {
+            DB::table('emergencias')->where('id', $emergencia)->lockForUpdate()->first() ?? abort(404);
+            abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada.');
+            $clave = [
+                'emergencia_id' => $emergencia,
+                'diagnostico_id' => DB::table('diagnosticos')->where('codigo', $datos['codigo'])->value('id'),
+            ];
+            if ($datos['seleccionado']) {
+                DB::table('emergencia_diagnosticos')->insertOrIgnore($clave);
+            } else {
+                DB::table('emergencia_diagnosticos')->where($clave)->delete();
+            }
+
+            return $this->diagnosticos($emergencia);
+        });
+    }
+
+    public function documentacion(string $emergencia): JsonResponse
+    {
+        $this->buscar($emergencia);
+        $registro = DB::table('emergencia_documentacion')->where('emergencia_id', $emergencia)->first();
+        return response()->json(['anamnesis' => $registro ? json_decode($registro->anamnesis, true) : null, 'revision' => $registro ? json_decode($registro->revision, true) : null]);
+    }
+
+    public function guardarDocumentacion(Request $request, string $emergencia): JsonResponse
+    {
+        $reglas = [
+            'seccion' => ['required', Rule::in(['anamnesis', 'revision'])],
+            'datos' => ['required', 'array'],
+            'datos.relato' => ['sometimes', 'string', 'max:20000'],
+            'datos.impresion' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'datos.fotos' => ['sometimes', 'array', 'max:3'],
+            'datos.fotos.*.id' => ['required_with:datos.fotos', 'uuid'],
+            'datos.fotos.*.nombre' => ['required_with:datos.fotos', 'string', 'max:255'],
+            'datos.fotos.*.url' => ['required_with:datos.fotos', 'string', 'max:1066700', 'regex:/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/'],
+        ];
+        if ($request->input('seccion') === 'revision') $reglas['datos.*'] = ['string', 'max:5000'];
+        $datos = $request->validate($reglas);
+        if ($datos['seccion'] === 'revision') {
+            foreach ($datos['datos'] as $clave => $valor) {
+                abort_unless(is_string($clave) && preg_match('/^[a-z]{1,30}$/', $clave) && is_string($valor) && mb_strlen($valor) <= 5000, 422, 'Revisión por sistemas inválida.');
+            }
+        }
+        return DB::transaction(function () use ($emergencia, $datos): JsonResponse {
+            DB::table('emergencias')->where('id', $emergencia)->lockForUpdate()->first() ?? abort(404);
+            abort_if($this->buscar($emergencia)->finalizada_en, 422, 'La atención ya fue finalizada.');
+            $columna = $datos['seccion'];
+            $existe = DB::table('emergencia_documentacion')->where('emergencia_id', $emergencia)->exists();
+            if ($existe) DB::table('emergencia_documentacion')->where('emergencia_id', $emergencia)->update([$columna => json_encode($datos['datos'], JSON_THROW_ON_ERROR), 'updated_at' => now()]);
+            else DB::table('emergencia_documentacion')->insert(['emergencia_id' => $emergencia, $columna => json_encode($datos['datos'], JSON_THROW_ON_ERROR), 'created_at' => now(), 'updated_at' => now()]);
+            return response()->json(['message' => 'Documentación guardada.']);
+        });
+    }
+
     public function editarEvaluacion(Request $request, string $emergencia, string $evaluacion): JsonResponse
     {
         $datos = $request->validate([

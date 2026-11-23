@@ -18,6 +18,34 @@ class EmergenciasEsquemaTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_diagnosticos_por_emergencia_son_unicos_y_se_conservan_al_cerrar(): void
+    {
+        $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
+        DB::table('diagnosticos')->insert(['codigo' => 'QA', 'nombre' => 'Prueba', 'nombre_original' => 'Prueba', 'uri_linealizacion' => 'qa']);
+        $id = $this->postJson('/api/emergencias', ['cubiculo' => '2'])->assertCreated()->json('id');
+        $url = "/api/emergencias/{$id}/diagnosticos";
+        $agregar = ['codigo' => 'QA', 'seleccionado' => true];
+        $this->postJson($url, $agregar)->assertOk()->assertJsonCount(1);
+        $this->postJson($url, $agregar)->assertOk()->assertJsonCount(1);
+        $this->postJson($url, ['codigo' => 'QA', 'seleccionado' => false])->assertOk()->assertJsonCount(0);
+        $this->postJson($url, $agregar)->assertOk();
+        $this->postJson("/api/emergencias/{$id}/cierre", ['condicionEgreso' => 'vivo', 'causaEgreso' => 'hospitalaria'])->assertOk();
+        $this->postJson($url, ['codigo' => 'QA', 'seleccionado' => false])->assertUnprocessable();
+        $this->getJson($url)->assertOk()->assertJsonPath('0.codigo', 'QA');
+    }
+
+    public function test_documentacion_clinica_persiste_por_seccion_y_no_admite_cambios_tras_el_cierre(): void
+    {
+        $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
+        $id = $this->postJson('/api/emergencias', ['cubiculo' => '2'])->assertCreated()->json('id');
+        $this->postJson("/api/emergencias/{$id}/documentacion", ['seccion' => 'anamnesis', 'datos' => ['relato' => 'Relato de prueba', 'impresion' => 'Dolor', 'fotos' => []]])->assertOk();
+        $this->postJson("/api/emergencias/{$id}/documentacion", ['seccion' => 'revision', 'datos' => ['general' => '{"estados":["Fiebre"],"detalle":""}']])->assertOk();
+        $this->getJson("/api/emergencias/{$id}/documentacion")->assertOk()->assertJsonPath('anamnesis.relato', 'Relato de prueba')->assertJsonPath('revision.general', '{"estados":["Fiebre"],"detalle":""}');
+        $this->postJson("/api/emergencias/{$id}/documentacion", ['seccion' => 'anamnesis', 'datos' => ['relato' => 'x', 'fotos' => [['id' => '11111111-1111-4111-8111-111111111111', 'nombre' => 'x', 'url' => 'data:text/html;base64,PHNjcmlwdD4=']]]])->assertUnprocessable();
+        $this->postJson("/api/emergencias/{$id}/cierre", ['condicionEgreso' => 'vivo', 'causaEgreso' => 'hospitalaria'])->assertOk();
+        $this->postJson("/api/emergencias/{$id}/documentacion", ['seccion' => 'revision', 'datos' => ['general' => 'Cambio']])->assertUnprocessable();
+    }
+
     public function test_evaluacion_identifica_al_profesional_y_su_rol_sin_aceptar_un_autor_enviado_por_el_cliente(): void
     {
         $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
@@ -147,8 +175,7 @@ class EmergenciasEsquemaTest extends TestCase
     {
         $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
         Schema::create('roles_cuenta_prueba', function (Blueprint $tabla): void { $tabla->string('codigo'); $tabla->string('nombre'); });
-        config(['database.connections.usuarios' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
-        DB::purge('usuarios');
+        $this->aislarUsuarios();
         $schema = Schema::connection('usuarios');
         $schema->create('sucursales_inventario', function (Blueprint $t): void { $t->id(); $t->boolean('activo'); });
         $schema->create('almacenes_inventario', function (Blueprint $t): void { $t->id(); $t->integer('sucursal_id'); $t->boolean('activo'); });

@@ -15,10 +15,10 @@ class LimpiezaIntegracionClinicaTest extends TestCase
 
     public function test_conserva_solo_las_tablas_del_backend_operativo(): void
     {
-        foreach (['pacientes', 'paciente_responsables', 'registros_admision_paciente', 'atenciones', 'emergencias', 'espacios_atencion', 'estancias_atencion', 'estancia_profesionales', 'estudios', 'estudios_ecografia', 'estudios_ecocardiograma', 'estudios_laboratorio', 'estudios_tomografia', 'cajas', 'caja_almacen', 'migrations'] as $tabla) {
+        foreach (['pacientes', 'paciente_responsables', 'registros_admision_paciente', 'atenciones', 'emergencias', 'espacios_atencion', 'estancias_atencion', 'estancia_profesionales', 'estudios', 'estudios_ecografia', 'estudios_ecocardiograma', 'estudios_laboratorio', 'estudios_tomografia', 'migrations'] as $tabla) {
             $this->assertTrue(Schema::hasTable($tabla), $tabla);
         }
-        foreach (['usuarios_sistema', 'roles', 'permisos', 'rol_usuario', 'permiso_rol', 'rol_sistema', 'sistemas', 'tipos_usuarios', 'users', 'password_reset_tokens', 'sessions', 'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'consultas', 'medicos', 'especialidades', 'medico_especialidad', 'consultorios', 'historias_clinicas', 'almacenes', 'almacen_existencias', 'farmacia_productos', 'farmacia_movimientos', 'farmacia_almacen_items', 'cuentas_emergencia', 'consumos_emergencia', 'pagos_emergencia', 'ordenes_emergencia', 'aplicaciones_ordenes_emergencia', 'evaluaciones_emergencia', 'signos_vitales_emergencia'] as $tabla) {
+        foreach (['cajas', 'caja_almacen', 'usuarios_sistema', 'roles', 'permisos', 'rol_usuario', 'permiso_rol', 'rol_sistema', 'sistemas', 'tipos_usuarios', 'users', 'password_reset_tokens', 'sessions', 'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'consultas', 'medicos', 'especialidades', 'medico_especialidad', 'consultorios', 'historias_clinicas', 'almacenes', 'almacen_existencias', 'farmacia_productos', 'farmacia_movimientos', 'farmacia_almacen_items', 'cuentas_emergencia', 'consumos_emergencia', 'pagos_emergencia', 'ordenes_emergencia', 'aplicaciones_ordenes_emergencia', 'evaluaciones_emergencia', 'signos_vitales_emergencia'] as $tabla) {
             $this->assertFalse(Schema::hasTable($tabla), $tabla);
         }
         $this->assertFalse(Schema::hasColumn('estancia_profesionales', 'medico_id'));

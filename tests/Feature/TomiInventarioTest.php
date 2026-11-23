@@ -12,13 +12,7 @@ class TomiInventarioTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['database.connections.usuarios' => [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-            'prefix' => '',
-            'foreign_key_constraints' => true,
-        ]]);
-        DB::purge('usuarios');
+        $this->aislarUsuarios();
         $this->crearEsquemaInventario();
 
         $acceso = \Mockery::mock(AccesoCompartido::class);

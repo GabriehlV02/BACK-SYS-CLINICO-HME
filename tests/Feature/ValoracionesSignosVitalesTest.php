@@ -16,6 +16,11 @@ class ValoracionesSignosVitalesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        DB::beginTransaction();
+        $esquema = 'fixture_'.bin2hex(random_bytes(8));
+        DB::statement('CREATE SCHEMA "'.$esquema.'"');
+        DB::statement('SET LOCAL search_path TO "'.$esquema.'"');
+        $this->beforeApplicationDestroyed(fn () => DB::purge());
         Schema::dropIfExists('valoraciones_signos_vitales');
         Schema::dropIfExists('servicio_signo_vital');
         Schema::dropIfExists('servicios_atencion_signos');
@@ -137,8 +142,7 @@ class ValoracionesSignosVitalesTest extends TestCase
 
     public function test_medico_solo_accede_a_citas_de_su_perfil(): void
     {
-        config(['database.connections.usuarios' => [...config('database.connections.sqlite'), 'database' => ':memory:']]);
-        DB::purge('usuarios');
+        $this->aislarUsuarios();
         Schema::connection('usuarios')->create('profesionales', function (Blueprint $table): void {
             $table->uuid('id')->primary();
             $table->uuid('usuario_id');

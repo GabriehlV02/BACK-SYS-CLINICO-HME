@@ -19,7 +19,16 @@ Las rutas HTTP se definen en `routes/api.php`. La autorización, las validacione
 ## Requisitos
 
 - PHP 8.3 o posterior y Composer.
-- Base de datos configurada en `.env` (la plantilla utiliza SQLite).
+- PostgreSQL configurado en `.env` para la base clínica y la conexión contable compartida.
+
+Para ejecutar PHPUnit, crea dos bases PostgreSQL exclusivas para pruebas
+(`clinico_hme_test` y `sys_conta_hme_test` por defecto). Ejecuta primero
+`php artisan migrate` desde el backend contable con `DB_DATABASE=sys_conta_hme_test`.
+Después, desde el backend clínico, ejecuta `php vendor/phpunit/phpunit/phpunit`.
+Puedes seleccionar otras bases con `DB_DATABASE` y `USUARIOS_DB_DATABASE`, siempre
+que sean distintas y tengan `test` o `qa` en el nombre como segmento separado por
+guiones bajos. Configura las credenciales de prueba con las variables `DB_*` y
+`USUARIOS_DB_*`. Las pruebas pueden recrear la base clínica seleccionada.
 - Node.js y npm únicamente si vas a compilar los recursos incluidos en Laravel.
 - Servicios externos opcionales, como Orthanc, según los módulos que vayas a utilizar.
 

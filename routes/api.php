@@ -118,6 +118,10 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
         Route::post('/', 'store');
         Route::get('/catalogo', 'catalogo');
         Route::post('/{emergencia}/evaluacion', 'evaluacion');
+        Route::get('/{emergencia}/diagnosticos', 'diagnosticos');
+        Route::post('/{emergencia}/diagnosticos', 'guardarDiagnostico');
+        Route::get('/{emergencia}/documentacion', 'documentacion');
+        Route::post('/{emergencia}/documentacion', 'guardarDocumentacion');
         Route::post('/{emergencia}/evaluacion/{evaluacion}/editar', 'editarEvaluacion');
         Route::post('/{emergencia}/orden', 'orden');
         Route::post('/{emergencia}/aplicar-orden', 'aplicarOrden');
@@ -155,8 +159,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
         Route::put('/roles/{rol}', [RolesController::class, 'update']);
         Route::get('/operacion/almacenes-cajas', [AlmacenesCajasController::class, 'index']);
         Route::post('/operacion/almacenes', [AlmacenesCajasController::class, 'storeAlmacen']);
-        Route::post('/operacion/cajas', [AlmacenesCajasController::class, 'storeCaja']);
-        Route::patch('/operacion/{tipo}/{id}/estado', [AlmacenesCajasController::class, 'cambiarEstado']);
+        Route::patch('/operacion/almacenes/{id}/estado', [AlmacenesCajasController::class, 'cambiarEstado']);
         Route::post('/pacientes', RegistrarPacienteController::class);
         Route::get('/pacientes', ListarPacientesController::class);
         Route::get('/estudios/agenda', [EstudiosController::class, 'agenda']);

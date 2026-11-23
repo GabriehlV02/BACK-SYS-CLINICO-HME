@@ -17,7 +17,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'pgsql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -100,13 +100,11 @@ return [
         ],
 
         'usuarios' => [
-            // En desarrollo local, los accesos se comparten desde el sistema
-            // contable. Producción puede cambiar a PostgreSQL con las variables
-            // USUARIOS_DB_CONNECTION y USUARIOS_DB_*.
-            'driver' => env('USUARIOS_DB_CONNECTION', 'sqlite'),
+            // Cuentas, permisos e inventario se comparten con el sistema contable.
+            'driver' => env('USUARIOS_DB_CONNECTION', 'pgsql'),
             'host' => env('USUARIOS_DB_HOST', '127.0.0.1'),
             'port' => env('USUARIOS_DB_PORT', '5432'),
-            'database' => env('USUARIOS_DB_CONNECTION', 'sqlite') === 'sqlite'
+            'database' => env('USUARIOS_DB_CONNECTION', 'pgsql') === 'sqlite'
                 ? env('USUARIOS_DB_SQLITE_DATABASE', base_path('../../SISTEMA_CONTABLE/BACK-SYS-CONTA-HME-main/database/database.sqlite'))
                 : env('USUARIOS_DB_DATABASE', 'sys_conta_hme'),
             'username' => env('USUARIOS_DB_USERNAME', 'hospital_app'),
