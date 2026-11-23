@@ -16,11 +16,6 @@ class ValoracionesSignosVitalesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        DB::beginTransaction();
-        $esquema = 'fixture_'.bin2hex(random_bytes(8));
-        DB::statement('CREATE SCHEMA "'.$esquema.'"');
-        DB::statement('SET LOCAL search_path TO "'.$esquema.'"');
-        $this->beforeApplicationDestroyed(fn () => DB::purge());
         Schema::dropIfExists('valoraciones_signos_vitales');
         Schema::dropIfExists('servicio_signo_vital');
         Schema::dropIfExists('servicios_atencion_signos');

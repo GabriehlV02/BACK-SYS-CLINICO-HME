@@ -101,7 +101,7 @@ class TomiInventarioTest extends TestCase
         ]);
         $db->table('sucursales_inventario')->insert(['id' => 1, 'nombre' => 'Sucursal Central', 'activo' => 1]);
         $db->table('almacenes_inventario')->insert(['id' => 1, 'sucursal_id' => 1, 'nombre' => 'Almacén principal', 'activo' => 1]);
-        $db->table('item_almacen_ubicaciones')->insert(['item_id' => 1, 'almacen_id' => 1, 'ubicacion' => 'Estante A / Repisa 2']);
+        $db->table('item_almacen_ubicaciones')->insert(['id' => 1, 'item_id' => 1, 'almacen_id' => 1, 'ubicacion' => 'Estante A / Repisa 2']);
 
         foreach ([
             ['id' => 1, 'numero' => 'L-PRONTO', 'vence' => now()->addDays(10)->toDateString(), 'cantidad' => 8],
