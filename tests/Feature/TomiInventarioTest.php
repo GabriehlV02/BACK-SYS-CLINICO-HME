@@ -109,7 +109,7 @@ class TomiInventarioTest extends TestCase
             ['id' => 3, 'numero' => 'L-VENCIDO', 'vence' => now()->subDays(5)->toDateString(), 'cantidad' => 2],
         ] as $lote) {
             $db->table('lotes_items')->insert(['id' => $lote['id'], 'item_id' => 1, 'numero' => $lote['numero'], 'vencimiento' => $lote['vence']]);
-            $db->table('existencias_lote')->insert(['lote_id' => $lote['id'], 'almacen_id' => 1, 'cantidad' => $lote['cantidad']]);
+            $db->table('existencias_lote')->insert(['id' => $lote['id'], 'lote_id' => $lote['id'], 'almacen_id' => 1, 'cantidad' => $lote['cantidad']]);
         }
     }
 
@@ -129,8 +129,8 @@ class TomiInventarioTest extends TestCase
         ] as $indice => $opcion) {
             $loteId = $indice + 10;
             $db->table('lotes_items')->insert(['id' => $loteId, 'item_id' => $opcion['item'], 'numero' => 'L-'.$loteId, 'vencimiento' => $opcion['vence']]);
-            $db->table('existencias_lote')->insert(['lote_id' => $loteId, 'almacen_id' => 1, 'cantidad' => $opcion['cantidad']]);
-            $db->table('item_almacen_ubicaciones')->insert(['item_id' => $opcion['item'], 'almacen_id' => 1, 'ubicacion' => $opcion['ubicacion']]);
+            $db->table('existencias_lote')->insert(['id' => $loteId, 'lote_id' => $loteId, 'almacen_id' => 1, 'cantidad' => $opcion['cantidad']]);
+            $db->table('item_almacen_ubicaciones')->insert(['id' => $opcion['item'], 'item_id' => $opcion['item'], 'almacen_id' => 1, 'ubicacion' => $opcion['ubicacion']]);
         }
     }
 }
