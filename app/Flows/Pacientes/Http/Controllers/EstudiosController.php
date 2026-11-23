@@ -25,6 +25,14 @@ class EstudiosController
             ->orderBy('estudios.realizado_en')->get(['estudios.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci'])]);
     }
 
+    public function interpretacionesRealizadas(): JsonResponse
+    {
+        return response()->json(['data' => DB::table('estudios')->join('pacientes', 'pacientes.id', '=', 'estudios.paciente_id')
+            ->whereIn('estudios.estado', ['INFORMADO', 'ENTREGADO'])->whereNotNull('estudios.informe')
+            ->whereIn('estudios.tipo', ['TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'])
+            ->orderByDesc('estudios.informado_en')->get(['estudios.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci'])]);
+    }
+
     public function subirArchivo(Request $request, string $estudio): JsonResponse
     {
         $actual = DB::table('estudios')->where('id', $estudio)->first();

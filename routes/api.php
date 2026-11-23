@@ -165,6 +165,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
         Route::get('/pacientes', ListarPacientesController::class);
         Route::get('/estudios/agenda', [EstudiosController::class, 'agenda']);
         Route::get('/estudios/interpretaciones', [EstudiosController::class, 'interpretaciones']);
+        Route::get('/estudios/interpretaciones/realizadas', [EstudiosController::class, 'interpretacionesRealizadas']);
         Route::post('/estudios/{estudio}/archivo', [EstudiosController::class, 'subirArchivo']);
         Route::get('/estudios/{estudio}/archivo', [EstudiosController::class, 'verArchivo']);
         Route::post('/estudios/{estudio}/informe', [EstudiosController::class, 'subirInforme']);
