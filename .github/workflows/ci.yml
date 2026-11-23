@@ -16,6 +16,33 @@ jobs:
   tests:
     name: Validación y pruebas PHP
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: clinico_hme_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d clinico_hme_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: clinico_hme_test
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      USUARIOS_DB_CONNECTION: pgsql
+      USUARIOS_DB_HOST: 127.0.0.1
+      USUARIOS_DB_PORT: 5432
+      USUARIOS_DB_DATABASE: sys_conta_hme_test
+      USUARIOS_DB_USERNAME: postgres
+      USUARIOS_DB_PASSWORD: postgres
     steps:
       - name: Descargar código
         uses: actions/checkout@v4
@@ -25,7 +52,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
-          extensions: mbstring, pdo_sqlite, sqlite3
+          extensions: mbstring, pdo_sqlite, sqlite3, pdo_pgsql, pgsql
           tools: composer:v2
 
       - name: Validar configuración de Composer
@@ -38,6 +65,11 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate --force
+          php <<'PHP'
+          <?php
+          $pdo = new PDO('pgsql:host=127.0.0.1;port=5432;dbname=postgres', 'postgres', 'postgres');
+          $pdo->exec('CREATE DATABASE sys_conta_hme_test');
+          PHP
 
       - name: Ejecutar pruebas
         run: php artisan test
