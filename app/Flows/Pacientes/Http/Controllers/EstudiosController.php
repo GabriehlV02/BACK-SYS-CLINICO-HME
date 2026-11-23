@@ -5,6 +5,7 @@ namespace App\Flows\Pacientes\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -15,6 +16,72 @@ class EstudiosController
         return response()->json(['data' => DB::table('estudios')->join('pacientes', 'pacientes.id', '=', 'estudios.paciente_id')
             ->whereIn('estudios.estado', ['SOLICITADO', 'EN_PROCESO'])->whereIn('estudios.tipo', ['TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'])
             ->orderBy('estudios.solicitado_en')->get(['estudios.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci'])]);
+    }
+
+    public function interpretaciones(): JsonResponse
+    {
+        return response()->json(['data' => DB::table('estudios')->join('pacientes', 'pacientes.id', '=', 'estudios.paciente_id')
+            ->where('estudios.estado', 'REALIZADO')->whereNull('estudios.informe')->whereIn('estudios.tipo', ['TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'])
+            ->orderBy('estudios.realizado_en')->get(['estudios.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci'])]);
+    }
+
+    public function subirArchivo(Request $request, string $estudio): JsonResponse
+    {
+        $actual = DB::table('estudios')->where('id', $estudio)->first();
+        abort_unless($actual, 404);
+        abort_unless(in_array($actual->tipo, ['TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'], true), 422);
+        $data = $request->validate(['archivo' => ['required', 'file', 'max:204800', 'mimes:jpg,jpeg,png,webp,dcm,dicom,zip,rar']]);
+        $ruta = $data['archivo']->store("estudios/{$estudio}/toma", 'local');
+        abort_unless($ruta, 500, 'No se pudo guardar el archivo del estudio.');
+        $tabla = $this->tabla($actual->tipo);
+        $detalle = DB::table($tabla)->where('estudio_id', $estudio)->first();
+        $archivos = json_decode($detalle->archivos ?? '[]', true) ?: [];
+        $archivos[] = ['tipo' => 'imagen', 'nombre' => $data['archivo']->getClientOriginalName(), 'mime' => $data['archivo']->getMimeType(), 'ruta' => $ruta];
+        $ahora = now();
+        DB::transaction(function () use ($estudio, $tabla, $archivos, $ahora): void {
+            DB::table($tabla)->where('estudio_id', $estudio)->update(['archivos' => json_encode($archivos), 'updated_at' => $ahora]);
+            DB::table('estudios')->where('id', $estudio)->update(['estado' => 'REALIZADO', 'realizado_en' => $ahora, 'updated_at' => $ahora]);
+        });
+
+        return response()->json(['data' => $this->adjuntarContenido(DB::table('estudios')->find($estudio))]);
+    }
+
+    public function verArchivo(string $estudio)
+    {
+        $actual = DB::table('estudios')->where('id', $estudio)->first();
+        abort_unless($actual, 404);
+        $detalle = DB::table($this->tabla($actual->tipo))->where('estudio_id', $estudio)->first();
+        $archivos = json_decode($detalle->archivos ?? '[]', true) ?: [];
+        $archivo = collect($archivos)->last(fn (array $item) => ($item['tipo'] ?? null) === 'imagen');
+        abort_unless($archivo && Storage::disk('local')->exists($archivo['ruta']), 404);
+
+        return Storage::disk('local')->response($archivo['ruta'], $archivo['nombre']);
+    }
+
+    public function subirInforme(Request $request, string $estudio): JsonResponse
+    {
+        $actual = DB::table('estudios')->where('id', $estudio)->first();
+        abort_unless($actual && $actual->estado === 'REALIZADO', 404);
+        $data = $request->validate(['archivo' => ['required', 'file', 'max:20480', 'mimes:pdf,jpg,jpeg,png'], 'informado_por' => ['nullable', 'string', 'max:120']]);
+        $ruta = $data['archivo']->store("estudios/{$estudio}/informe", 'local');
+        abort_unless($ruta, 500, 'No se pudo guardar el informe.');
+        $ahora = now();
+        DB::table('estudios')->where('id', $estudio)->update([
+            'informe' => json_encode(['ruta' => $ruta, 'nombre' => $data['archivo']->getClientOriginalName(), 'mime' => $data['archivo']->getMimeType()]),
+            'informado_por' => $data['informado_por'] ?? null,
+            'estado' => 'INFORMADO', 'informado_en' => $ahora, 'updated_at' => $ahora,
+        ]);
+
+        return response()->json(['data' => $this->adjuntarContenido(DB::table('estudios')->find($estudio))]);
+    }
+
+    public function verInforme(string $estudio)
+    {
+        $informe = DB::table('estudios')->where('id', $estudio)->value('informe');
+        $archivo = json_decode($informe ?? 'null', true);
+        abort_unless($archivo && isset($archivo['ruta']) && Storage::disk('local')->exists($archivo['ruta']), 404);
+
+        return Storage::disk('local')->response($archivo['ruta'], $archivo['nombre']);
     }
 
     private const TIPOS = ['LABORATORIO', 'TOMOGRAFIA', 'ECOGRAFIA', 'ECOCARDIOGRAMA', 'RADIOGRAFIA'];
@@ -52,9 +119,9 @@ class EstudiosController
     {
         $actual = DB::table('estudios')->where('id', $estudio)->first();
         abort_unless($actual, 404);
-        $data = $request->validate(['estado' => ['sometimes', Rule::in(self::ESTADOS)], 'estado_detalle' => ['nullable', 'string', 'max:50'], 'informe' => ['nullable', 'string'], 'informado_por' => ['nullable', 'string', 'max:120'], 'contenido' => ['nullable', 'array'], 'archivos' => ['nullable', 'array'], 'observaciones_tecnicas' => ['nullable', 'string']]);
+        $data = $request->validate(['estado' => ['sometimes', Rule::in(array_diff(self::ESTADOS, ['INFORMADO']))], 'estado_detalle' => ['nullable', 'string', 'max:50'], 'contenido' => ['nullable', 'array'], 'archivos' => ['nullable', 'array'], 'observaciones_tecnicas' => ['nullable', 'string']]);
         $ahora = now();
-        $cambios = collect($data)->only(['estado', 'estado_detalle', 'informe', 'informado_por'])->all();
+        $cambios = collect($data)->only(['estado', 'estado_detalle'])->all();
         $cambios['updated_at'] = $ahora;
         if (($data['estado'] ?? null) === 'REALIZADO') {
             $cambios['realizado_en'] = $ahora;
