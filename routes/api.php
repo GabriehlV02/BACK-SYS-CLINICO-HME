@@ -47,6 +47,7 @@ use App\Http\Middleware\VerificarIntegracionContable;
 use App\Http\Middleware\VerificarSesionCompartida;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/integraciones/portal/pacientes/{paciente}/signos-vitales', [ValoracionesSignosVitalesController::class, 'perfilPaciente'])->whereUuid('paciente')->middleware('throttle:60,1');
 Route::post('/login', IniciarSesionController::class)->middleware('throttle:login-compartido');
 Route::middleware(VerificarIntegracionContable::class)->prefix('integraciones/contable')->group(function (): void {
     Route::get('/pacientes', ListarPacientesController::class);

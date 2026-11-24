@@ -45,4 +45,6 @@ return [
         ],
     ],
 
+    'perfil_signos_token' => env('PERFIL_SIGNOS_TOKEN'),
+
 ];

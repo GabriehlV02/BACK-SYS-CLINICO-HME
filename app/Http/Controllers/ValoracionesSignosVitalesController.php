@@ -62,6 +62,46 @@ class ValoracionesSignosVitalesController extends Controller
     public function historialPaciente(Request $request, string $paciente, AccesoCompartido $acceso): JsonResponse
     {
         $acceso->exigir($request->user()->id, 'SIGNOS_VITALES_REGISTRAR');
+        return response()->json(['data' => $this->historial($paciente)]);
+    }
+
+    public function perfilPaciente(Request $request, string $paciente): JsonResponse
+    {
+        $token = (string) config('services.perfil_signos_token');
+        abort_unless($token !== '' && hash_equals($token, (string) $request->bearerToken()), 401);
+
+        $historial = $this->historial($paciente);
+        $instante = fn (array $toma) => \Illuminate\Support\Carbon::parse($toma['fecha'], config('app.timezone'));
+        usort($historial, fn (array $a, array $b): int => $instante($b) <=> $instante($a));
+        $resumen = ['altura' => null, 'peso' => null, 'ultimaMedicion' => null];
+        foreach ($historial as $toma) {
+            $fecha = $instante($toma)->toIso8601String();
+            $mediciones = array_values(array_filter($toma['mediciones'], fn (array $medicion): bool =>
+                isset($medicion['valor']) && is_numeric($medicion['valor'])));
+            if ($mediciones === []) {
+                continue;
+            }
+            $resumen['ultimaMedicion'] ??= ['fecha' => $fecha, 'valores' => $mediciones];
+            foreach ($mediciones as $medicion) {
+                $campo = match ($medicion['id'] ?? '') {
+                    'estatura', 'altura' => 'altura',
+                    'peso' => 'peso',
+                    default => null,
+                };
+                if ($campo !== null) {
+                    $resumen[$campo] ??= [...$medicion, 'fecha' => $fecha];
+                }
+            }
+            if ($resumen['altura'] && $resumen['peso']) {
+                break;
+            }
+        }
+
+        return response()->json($resumen)->header('Cache-Control', 'private, no-store');
+    }
+
+    private function historial(string $paciente): array
+    {
         $historial = [];
 
         $valoraciones = DB::table('valoraciones_signos_vitales as v')
@@ -121,7 +161,7 @@ class ValoracionesSignosVitalesController extends Controller
 
         usort($historial, fn (array $a, array $b): int => strcmp($a['fecha'], $b['fecha']));
 
-        return response()->json(['data' => $historial]);
+        return $historial;
     }
 
     private function autorizar(Request $request, int $cita, AccesoCompartido $acceso, bool $escritura = false): void
