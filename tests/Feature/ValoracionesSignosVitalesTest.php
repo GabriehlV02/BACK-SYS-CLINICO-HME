@@ -16,6 +16,7 @@ class ValoracionesSignosVitalesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Schema::dropIfExists('atenciones_consulta');
         Schema::dropIfExists('valoraciones_signos_vitales');
         Schema::dropIfExists('servicio_signo_vital');
         Schema::dropIfExists('servicios_atencion_signos');
@@ -27,6 +28,7 @@ class ValoracionesSignosVitalesTest extends TestCase
             $table->uuid('profesional_id')->nullable();
             $table->string('estado');
         });
+        (require database_path('migrations/2026_11_13_140000_create_atenciones_consulta_table.php'))->up();
         (require database_path('migrations/2026_11_05_120915_create_configuracion_signos_vitales_table.php'))->up();
         (require database_path('migrations/2026_11_05_212049_add_componentes_to_configuracion_signos_vitales_table.php'))->up();
         (require database_path('migrations/2026_11_06_142231_create_servicios_signos_vitales_tables.php'))->up();
@@ -38,6 +40,39 @@ class ValoracionesSignosVitalesTest extends TestCase
         ]);
         $this->withoutMiddleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::class]);
         $this->actingAs(new GenericUser(['id' => '33333333-3333-4333-8333-333333333333']));
+    }
+
+    public function test_iniciar_consulta_es_idempotente_y_bloquea_con_409_la_edicion_de_enfermeria(): void
+    {
+        $this->mock(AccesoCompartido::class)->shouldReceive('esAdministrador')->andReturnTrue();
+        $url = '/api/v1/citas/1/signos-vitales';
+        $version = $this->postJson($url, ['version' => null, 'valores' => ['temperatura' => '36.7']])->assertCreated()->json('data.id');
+        $this->getJson($url)->assertOk()->assertJsonPath('bloqueadaEnfermeria', false);
+
+        $this->postJson('/api/v1/citas/1/atencion/iniciar')->assertOk()->assertJsonPath('data.version', 1);
+        $this->postJson('/api/v1/citas/1/atencion/iniciar')->assertOk()->assertJsonPath('data.version', 1);
+        $this->assertSame(1, DB::table('atenciones_consulta')->where('cita_id', 1)->count());
+
+        $this->mock(AccesoCompartido::class, function ($mock): void {
+            $mock->shouldReceive('esAdministrador')->andReturnFalse();
+            $mock->shouldReceive('permisos')->andReturn(['SIGNOS_VITALES_REGISTRAR']);
+        });
+        $this->getJson($url)->assertOk()->assertJsonPath('bloqueadaEnfermeria', true)->assertJsonPath('data.valores.temperatura', '36.7');
+        $this->postJson($url, ['version' => $version, 'valores' => ['temperatura' => '38']])
+            ->assertStatus(409)->assertJsonPath('message', 'El médico ya inició la consulta. Enfermería solo puede consultar los signos vitales.');
+        $this->assertSame(1, DB::table('valoraciones_signos_vitales')->where('cita_id', 1)->count());
+        $this->getJson($url)->assertOk()->assertJsonPath('data.valores.temperatura', '36.7');
+        $this->postJson('/api/v1/citas/2/atencion/iniciar')->assertForbidden();
+        $this->assertFalse(DB::table('atenciones_consulta')->where('cita_id', 2)->exists());
+    }
+
+    public function test_no_se_inicia_una_consulta_cancelada(): void
+    {
+        $this->mock(AccesoCompartido::class)->shouldReceive('esAdministrador')->andReturnTrue();
+
+        $this->postJson('/api/v1/citas/3/atencion/iniciar')->assertStatus(422);
+
+        $this->assertFalse(DB::table('atenciones_consulta')->where('cita_id', 3)->exists());
     }
 
     public function test_guarda_versiones_por_cita_y_conserva_mediciones_anteriores(): void
@@ -148,6 +183,7 @@ class ValoracionesSignosVitalesTest extends TestCase
         $mock = $this->mock(AccesoCompartido::class);
         $mock->shouldReceive('esAdministrador')->andReturn(false);
         $mock->shouldReceive('permisos')->andReturn(['CONSULTAS_ATENDER']);
+        $this->postJson('/api/v1/citas/1/atencion/iniciar')->assertOk();
         $this->postJson('/api/v1/citas/1/signos-vitales', ['version' => null, 'valores' => ['temperatura' => '36']])->assertCreated();
         $this->getJson('/api/v1/citas/2/signos-vitales')->assertForbidden();
         $this->postJson('/api/v1/citas/2/signos-vitales', ['version' => null, 'valores' => ['temperatura' => '36']])->assertForbidden();

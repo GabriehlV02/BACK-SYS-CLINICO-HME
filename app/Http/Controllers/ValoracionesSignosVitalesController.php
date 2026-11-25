@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Flows\Autenticacion\AccesoCompartido;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,7 +16,8 @@ class ValoracionesSignosVitalesController extends Controller
         $this->autorizar($request, $cita, $acceso);
         $valoracion = DB::table('valoraciones_signos_vitales')->where('cita_id', $cita)->orderByDesc('id')->first();
 
-        return response()->json(['data' => $valoracion ? $this->presentar($valoracion) : null]);
+        return response()->json(['data' => $valoracion ? $this->presentar($valoracion) : null,
+            'bloqueadaEnfermeria' => DB::table('atenciones_consulta')->where('cita_id', $cita)->exists()]);
     }
 
     public function store(Request $request, int $cita, AccesoCompartido $acceso): JsonResponse
@@ -46,10 +48,19 @@ class ValoracionesSignosVitalesController extends Controller
             }
             $mediciones[] = ['id' => $id, ...$definicion, 'valor' => trim($valor)];
         }
-        $id = DB::transaction(function () use ($cita, $request, $mediciones, $datos): int {
+        $id = DB::transaction(function () use ($cita, $request, $mediciones, $datos, $acceso): int {
             $citaActual = DB::table('citas')->where('id', $cita)->lockForUpdate()->first();
             abort_unless($citaActual, 404);
             abort_if($citaActual->estado === 'cancelada', 422, 'La cita está cancelada.');
+            if (DB::table('atenciones_consulta')->where('cita_id', $cita)->exists()) {
+                $usuario = $request->user()->id;
+                $puedeEditar = $acceso->esAdministrador($usuario);
+                if (! $puedeEditar && in_array('CONSULTAS_ATENDER', $acceso->permisos($usuario), true)) {
+                    $puedeEditar = $citaActual->profesional_id && DB::connection('usuarios')->table('profesionales')
+                        ->where('id', $citaActual->profesional_id)->where('usuario_id', $usuario)->where('activo', true)->exists();
+                }
+                abort_unless($puedeEditar, 409, 'El médico ya inició la consulta. Enfermería solo puede consultar los signos vitales.');
+            }
             $ultimaVersion = DB::table('valoraciones_signos_vitales')->where('cita_id', $cita)->max('id');
             abort_if(($ultimaVersion === null ? null : (int) $ultimaVersion) !== ($datos['version'] === null ? null : (int) $datos['version']), 409, 'La valoración cambió. Vuelve a cargarla antes de guardar.');
 
@@ -62,6 +73,7 @@ class ValoracionesSignosVitalesController extends Controller
     public function historialPaciente(Request $request, string $paciente, AccesoCompartido $acceso): JsonResponse
     {
         $acceso->exigir($request->user()->id, 'SIGNOS_VITALES_REGISTRAR');
+
         return response()->json(['data' => $this->historial($paciente)]);
     }
 
@@ -71,13 +83,12 @@ class ValoracionesSignosVitalesController extends Controller
         abort_unless($token !== '' && hash_equals($token, (string) $request->bearerToken()), 401);
 
         $historial = $this->historial($paciente);
-        $instante = fn (array $toma) => \Illuminate\Support\Carbon::parse($toma['fecha'], config('app.timezone'));
+        $instante = fn (array $toma) => Carbon::parse($toma['fecha'], config('app.timezone'));
         usort($historial, fn (array $a, array $b): int => $instante($b) <=> $instante($a));
         $resumen = ['altura' => null, 'peso' => null, 'ultimaMedicion' => null];
         foreach ($historial as $toma) {
             $fecha = $instante($toma)->toIso8601String();
-            $mediciones = array_values(array_filter($toma['mediciones'], fn (array $medicion): bool =>
-                isset($medicion['valor']) && is_numeric($medicion['valor'])));
+            $mediciones = array_values(array_filter($toma['mediciones'], fn (array $medicion): bool => isset($medicion['valor']) && is_numeric($medicion['valor'])));
             if ($mediciones === []) {
                 continue;
             }

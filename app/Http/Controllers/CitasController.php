@@ -99,6 +99,7 @@ class CitasController extends Controller
         return DB::table('citas')->join('pacientes', 'pacientes.id', '=', 'citas.paciente_id')
             ->select(['citas.*', 'pacientes.nombres', 'pacientes.apellido_paterno', 'pacientes.apellido_materno', 'pacientes.ci', 'pacientes.fecha_nacimiento', 'pacientes.direccion_domicilio'])
             ->selectSub(DB::table('valoraciones_signos_vitales')->selectRaw('count(*)')->whereColumn('cita_id', 'citas.id'), 'cantidad_valoraciones')
+            ->selectSub(DB::table('atenciones_consulta')->select('created_at')->whereColumn('cita_id', 'citas.id'), 'atencion_iniciada_en')
             ->selectSub(DB::table('atenciones_consulta')->select('finalizada_en')->whereColumn('cita_id', 'citas.id'), 'atencion_finalizada_en');
     }
 
@@ -108,6 +109,7 @@ class CitasController extends Controller
             'profesionalId' => $cita->profesional_id,
             'servicioId' => $cita->servicio_id,
             'tipo' => $cita->tipo, 'citaOrigenId' => $cita->cita_origen_id, 'atencionFinalizadaEn' => $cita->atencion_finalizada_en,
+            'atencionIniciadaEn' => $cita->atencion_iniciada_en,
             'paciente' => trim($cita->nombres.' '.$cita->apellido_paterno.' '.$cita->apellido_materno),
             'nombre' => $cita->nombres, 'apellidos' => trim($cita->apellido_paterno.' '.$cita->apellido_materno),
             'ci' => $cita->ci, 'fechaNacimiento' => $cita->fecha_nacimiento,

@@ -18,8 +18,8 @@ use App\Flows\Imagenologia\Http\Controllers\OrthancController;
 use App\Flows\Pacientes\Http\Controllers\ActualizarResponsablePacienteController;
 use App\Flows\Pacientes\Http\Controllers\BuscarPacientePorCiController;
 use App\Flows\Pacientes\Http\Controllers\ClasificacionesEstudioController;
-use App\Flows\Pacientes\Http\Controllers\EstudiosController;
 use App\Flows\Pacientes\Http\Controllers\DocumentosHistoriaClinicaController;
+use App\Flows\Pacientes\Http\Controllers\EstudiosController;
 use App\Flows\Pacientes\Http\Controllers\ListarPacientesController;
 use App\Flows\Pacientes\Http\Controllers\RegistrarPacienteController;
 use App\Flows\Usuarios\Http\AlmacenesCajasController;
@@ -85,6 +85,7 @@ Route::middleware([VerificarSesionCompartida::class, RegistrarAuditoriaAccion::c
     Route::get('/v1/profesionales', ProfesionalesCompartidosController::class);
     Route::get('/v1/diagnosticos', [DiagnosticosController::class, 'index']);
     Route::get('/v1/citas/{cita}/atencion', [AtencionConsultaController::class, 'show'])->whereNumber('cita');
+    Route::post('/v1/citas/{cita}/atencion/iniciar', [AtencionConsultaController::class, 'iniciar'])->whereNumber('cita');
     Route::get('/v1/citas/{cita}/historial', [AtencionConsultaController::class, 'historial'])->whereNumber('cita');
     Route::put('/v1/citas/{cita}/atencion', [AtencionConsultaController::class, 'guardar'])->whereNumber('cita');
     Route::get('/citas', [CitasController::class, 'index']);

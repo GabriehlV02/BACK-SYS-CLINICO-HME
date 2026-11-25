@@ -15,6 +15,7 @@ class AtencionConsultaTest extends TestCase
 
     public function test_atencion_exige_sesion(): void
     {
+        $this->postJson('/api/v1/citas/1/atencion/iniciar')->assertUnauthorized();
         $this->getJson('/api/v1/citas/1/atencion')->assertUnauthorized();
         $this->putJson('/api/v1/citas/1/atencion', [])->assertUnauthorized();
         $this->getJson('/api/v1/citas/1/historial')->assertUnauthorized();

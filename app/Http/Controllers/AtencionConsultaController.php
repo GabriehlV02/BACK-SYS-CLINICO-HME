@@ -24,6 +24,29 @@ class AtencionConsultaController extends Controller
         return $registro;
     }
 
+    public function iniciar(Request $request, int $cita, AccesoCompartido $acceso): JsonResponse
+    {
+        $this->autorizar($request, $cita, $acceso, true);
+        $registro = DB::transaction(function () use ($request, $cita): object {
+            $actual = DB::table('citas')->where('id', $cita)->lockForUpdate()->first();
+            abort_unless($actual, 404);
+            abort_if($actual->estado === 'cancelada', 422, 'La cita está cancelada.');
+            $registro = DB::table('atenciones_consulta')->where('cita_id', $cita)->first();
+            if (! $registro) {
+                DB::table('atenciones_consulta')->insert([
+                    'cita_id' => $cita, 'registrado_por' => $request->user()->id,
+                    'contenido' => json_encode(['motivo' => '', 'enfermedadActual' => '', 'examenFisico' => '', 'antecedentes' => '', 'notas' => '', 'diagnosticos' => [], 'revision' => [], 'ordenes' => []], JSON_THROW_ON_ERROR),
+                    'version' => 1, 'created_at' => now(), 'updated_at' => now(),
+                ]);
+                $registro = DB::table('atenciones_consulta')->where('cita_id', $cita)->first();
+            }
+
+            return $registro;
+        });
+
+        return response()->json(['data' => $this->presentar($registro)]);
+    }
+
     public function show(Request $request, int $cita, AccesoCompartido $acceso): JsonResponse
     {
         $this->autorizar($request, $cita, $acceso);
